@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Leitor Sixxis (teste)</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  :root { --ok:#2e7d32; --av:#f9a825; --er:#c62828; --az:#1f6feb; --cz:#eceff3; --tx:#1d2329; }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background: #f4f5f7; color: var(--tx); }
+  header { background: #1f2a37; color: #fff; padding: 10px 12px 0; position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 16px; margin: 0 0 8px; display: flex; justify-content: space-between; align-items: center; }
+  header h1 small { font-weight: 400; opacity: .7; font-size: 12px; }
+  .tabs { display: flex; gap: 4px; overflow-x: auto; }
+  .tabs button { flex: 1; background: transparent; color: #cfd8e3; border: 0; padding: 9px 6px; font-size: 14px; border-bottom: 3px solid transparent; white-space: nowrap; }
+  .tabs button.on { color: #fff; border-bottom-color: #58a6ff; font-weight: 600; }
+  main { padding: 10px 12px 40px; max-width: 560px; margin: 0 auto; }
+  #cam { position: relative; background: #000; border-radius: 10px; overflow: hidden; min-height: 40px; }
+  #reader { width: 100%; }
+  .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+  .btn { border: 0; border-radius: 8px; padding: 10px 14px; font-size: 15px; background: var(--az); color: #fff; }
+  .btn.cinza { background: #5b6470; } .btn.verm { background: var(--er); } .btn.claro { background: #fff; color: var(--tx); border: 1px solid #cfd5dc; }
+  .btn:disabled { opacity: .45; }
+  input#manual { flex: 1; font-size: 15px; padding: 10px; border: 1px solid #cfd5dc; border-radius: 8px; min-width: 0; }
+  #msg { border-radius: 10px; padding: 12px; margin: 8px 0; font-size: 16px; font-weight: 600; background: var(--cz); min-height: 48px; }
+  #msg small { display: block; font-weight: 400; font-size: 13px; margin-top: 3px; opacity: .9; }
+  #msg.ok { background: var(--ok); color: #fff; } #msg.av { background: var(--av); color: #222; } #msg.er { background: var(--er); color: #fff; }
+  .card { background: #fff; border-radius: 10px; padding: 12px; margin: 10px 0; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+  .card h3 { margin: 0 0 8px; font-size: 15px; }
+  .grande { font-size: 30px; font-weight: 700; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 4px; }
+  .grid div { background: var(--cz); border-radius: 5px; text-align: center; padding: 8px 0; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .grid div.ok { background: var(--ok); color: #fff; } .grid div.nl { background: var(--er); color: #fff; } .grid div.ex { background: #90a4ae; color: #fff; }
+  select { font-size: 15px; padding: 8px; border-radius: 8px; border: 1px solid #cfd5dc; width: 100%; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid #eef0f3; vertical-align: top; }
+  th { font-size: 12px; color: #5b6470; font-weight: 600; }
+  .tag { display: inline-block; border-radius: 4px; padding: 1px 6px; font-size: 11px; font-weight: 600; }
+  .t-ok { background: #e3f3e5; color: var(--ok); } .t-av { background: #fff4d6; color: #8a6200; } .t-er { background: #fde4e4; color: var(--er); } .t-cz { background: var(--cz); color: #5b6470; }
+  .mono { font-family: ui-monospace, monospace; font-size: 12.5px; word-break: break-all; }
+  .muted { color: #6b7480; font-size: 13px; }
+  ul.l { list-style: none; padding: 0; margin: 0; }
+  ul.l li { padding: 6px 0; border-bottom: 1px solid #eef0f3; font-size: 13.5px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Leitor Sixxis <small>TESTE · dados só neste celular</small></h1>
+  <nav class="tabs">
+    <button data-m="entrada" class="on">Entrada</button>
+    <button data-m="expedicao">Expedição</button>
+    <button data-m="inventario">Inventário</button>
+    <button data-m="situacao">Situação</button>
+  </nav>
+</header>
+<main>
+  <div id="leitura">
+    <div id="cam"><div id="reader"></div></div>
+    <div class="row">
+      <button class="btn" id="bCam">Ligar câmera</button>
+      <input id="manual" placeholder="ou digite / leitor Bluetooth + Enter" autocomplete="off" autocapitalize="characters">
+    </div>
+    <div id="msg">Pronto.<small>Ligue a câmera e bipe.</small></div>
+  </div>
+
+  <!-- ENTRADA -->
+  <section data-p="entrada">
+    <div class="card">
+      <h3>Conferência de entrada (batismo)</h3>
+      <select id="selBat"></select>
+      <div class="row" style="justify-content:space-between">
+        <div><span class="grande" id="eCont">0/0</span> <span class="muted">conferidas</span></div>
+        <button class="btn claro" id="eFechar">Fechar conferência</button>
+      </div>
+      <div class="grid" id="eGrid"></div>
+      <p class="muted">Pode bipar em qualquer ordem. Cinza = falta · verde = conferida · azul-acinzentado = já expedida · vermelho = não localizada.</p>
+    </div>
+    <div class="card hidden" id="eResumo"></div>
+  </section>
+
+  <!-- EXPEDIÇÃO -->
+  <section data-p="expedicao" class="hidden">
+    <div class="card" id="xAtual"></div>
+    <div class="row">
+      <button class="btn claro" id="xDesfazer">Desfazer última caixa</button>
+      <button class="btn claro" id="xRomaneio">Fechar romaneio</button>
+    </div>
+    <div class="card hidden" id="xResumo"></div>
+  </section>
+
+  <!-- INVENTÁRIO -->
+  <section data-p="inventario" class="hidden">
+    <div class="card">
+      <h3>Inventário do depósito</h3>
+      <p class="muted">Bipe tudo o que está fisicamente no depósito. Ao fechar, o leitor compara com o que o sistema diz que está EM ESTOQUE.</p>
+      <div class="row" style="justify-content:space-between">
+        <div><span class="grande" id="iCont">0</span> <span class="muted">bipadas</span></div>
+        <div class="row" style="margin:0">
+          <button class="btn claro" id="iNovo">Recomeçar</button>
+          <button class="btn" id="iFechar">Fechar</button>
+        </div>
+      </div>
+    </div>
+    <div class="card hidden" id="iResumo"></div>
+  </section>
+
+  <!-- SITUAÇÃO -->
+  <section data-p="situacao" class="hidden">
+    <div class="card"><h3>Estoque por SKU</h3><div id="sTab"></div></div>
+    <div class="card"><h3>Unidades</h3><div id="sUn"></div></div>
+    <div class="card"><h3>Últimas bipagens</h3><ul class="l" id="sLog"></ul></div>
+    <div class="card">
+      <h3>Zerar o teste</h3>
+      <p class="muted">Volta todas as unidades para BATIZADA e apaga as conferências deste celular.</p>
+      <button class="btn verm" id="sZerar">Zerar teste</button>
+    </div>
+  </section>
+</main>
+
+<script>
+const DADOS = {"mapa": [{"sku": "SPN-LIFE-SX", "prefixo": "LIFEPT", "desc": "Spinning Sixxis Life Preto"}, {"sku": "CLI-SX040-220", "prefixo": "SX040-220", "desc": "Climatizador Sixxis SX040 Trend 220V"}, {"sku": "CLI-SX070-220", "prefixo": "SX070-220", "desc": "Climatizador Sixxis SX070 Trend 220V"}, {"sku": "CLI-SX070-110", "prefixo": "SX070-110", "desc": "Climatizador Sixxis SX070 Trend 127V"}], "batismos": [{"id": "TESTE-LIFEPT", "sku": "SPN-LIFE-SX", "prefixo": "LIFEPT", "de": 1, "ate": 20, "qtd": 20}, {"id": "TESTE-SX040-220", "sku": "CLI-SX040-220", "prefixo": "SX040-220", "de": 1, "ate": 2, "qtd": 2}, {"id": "TESTE-SX070-220", "sku": "CLI-SX070-220", "prefixo": "SX070-220", "de": 1, "ate": 2, "qtd": 2}, {"id": "TESTE-SX070-110", "sku": "CLI-SX070-110", "prefixo": "SX070-110", "de": 1, "ate": 2, "qtd": 2}], "unidades": [{"serial": "LIFEPT-000001", "sku": "SPN-LIFE-SX", "prefixo": "LIFEPT", "n": 1, "batismo": "TESTE-LIFEPT"}, {"serial": "LIFEPT-000002", "sku": "SPN-LIFE-SX", "prefixo": "LIFEPT", "n": 2, "batismo": "TESTE-LIFEPT"}, {"serial": "LIFEPT-000003", "sku": "SPN-LIFE-SX", "prefixo": "LIFEPT", "n": 3, "batismo": "TESTE-LIFEPT"}, {"serial": "LIFEPT-000004", "sku": "SPN-LIFE-SX", "prefixo": "LIFEPT", "n": 4, "batismo": "TESTE-LIFEPT"}, {"serial": "LIFEPT-000005", "sku": "SPN-LIFE-SX", "prefixo": "LIFEPT", "n": 5, "batismo": "TESTE-LIFEPT"}, {"serial": "LIFEPT-000006", "sku": "SPN-LIFE-SX", "prefixo": "LIFEPT", "n": 6, "batismo": "TESTE-LIFEPT"}, {"serial": "LIFEPT-000007", "sku": "SPN-LIFE-SX", "prefixo": "LIFEPT", "n": 7, "batismo": "TESTE-LIFEPT"}, {"serial": "LIFEPT-000008", "sku": "SPN-LIFE-SX", "prefixo": "LIFEPT", "n": 8, "batismo": "TESTE-LIFEPT"}, {"serial": "LIFEPT-000009", "sku": "SPN-LIFE-SX", "prefixo": "LIFEPT", "n": 9, "batismo": "TESTE-LIFEPT"}, {"serial": "LIFEPT-000010", "sku": "SPN-LIFE-SX", "prefixo": "LIFEPT", "n": 10, "batismo": "TESTE-LIFEPT"}, {"serial": "LIFEPT-000011", "sku": "SPN-LIFE-SX", "prefixo": "LIFEPT", "n": 11, "batismo": "TESTE-LIFEPT"}, {"serial": "LIFEPT-000012", "sku": "SPN-LIFE-SX", "prefixo": "LIFEPT", "n": 12, "batismo": "TESTE-LIFEPT"}, {"serial": "LIFEPT-000013", "sku": "SPN-LIFE-SX", "prefixo": "LIFEPT", "n": 13, "batismo": "TESTE-LIFEPT"}, {"serial": "LIFEPT-000014", "sku": "SPN-LIFE-SX", "prefixo": "LIFEPT", "n": 14, "batismo": "TESTE-LIFEPT"}, {"serial": "LIFEPT-000015", "sku": "SPN-LIFE-SX", "prefixo": "LIFEPT", "n": 15, "batismo": "TESTE-LIFEPT"}, {"serial": "LIFEPT-000016", "sku": "SPN-LIFE-SX", "prefixo": "LIFEPT", "n": 16, "batismo": "TESTE-LIFEPT"}, {"serial": "LIFEPT-000017", "sku": "SPN-LIFE-SX", "prefixo": "LIFEPT", "n": 17, "batismo": "TESTE-LIFEPT"}, {"serial": "LIFEPT-000018", "sku": "SPN-LIFE-SX", "prefixo": "LIFEPT", "n": 18, "batismo": "TESTE-LIFEPT"}, {"serial": "LIFEPT-000019", "sku": "SPN-LIFE-SX", "prefixo": "LIFEPT", "n": 19, "batismo": "TESTE-LIFEPT"}, {"serial": "LIFEPT-000020", "sku": "SPN-LIFE-SX", "prefixo": "LIFEPT", "n": 20, "batismo": "TESTE-LIFEPT"}, {"serial": "SX040-220-000001", "sku": "CLI-SX040-220", "prefixo": "SX040-220", "n": 1, "batismo": "TESTE-SX040-220"}, {"serial": "SX040-220-000002", "sku": "CLI-SX040-220", "prefixo": "SX040-220", "n": 2, "batismo": "TESTE-SX040-220"}, {"serial": "SX070-220-000001", "sku": "CLI-SX070-220", "prefixo": "SX070-220", "n": 1, "batismo": "TESTE-SX070-220"}, {"serial": "SX070-220-000002", "sku": "CLI-SX070-220", "prefixo": "SX070-220", "n": 2, "batismo": "TESTE-SX070-220"}, {"serial": "SX070-110-000001", "sku": "CLI-SX070-110", "prefixo": "SX070-110", "n": 1, "batismo": "TESTE-SX070-110"}, {"serial": "SX070-110-000002", "sku": "CLI-SX070-110", "prefixo": "SX070-110", "n": 2, "batismo": "TESTE-SX070-110"}], "envios": [{"envio": "48179290072", "venda": "2000018810952016", "nf": 1651, "loja": "SAO PAULO", "itens": [{"sku": "CLI-SX040-220", "desc": "Climatizador Sixxis SX040 Trend Voltagem:220V", "qtd": 1.0}]}, {"envio": "48299526439", "venda": "2000019068282600", "nf": 4607, "loja": "AR BRASIL", "itens": [{"sku": "SPN-LIFE-SX", "desc": "Spinning Sixxis Modelo:Life Preto", "qtd": 1.0}]}, {"envio": "48285960601", "venda": "2000019039215180", "nf": 4608, "loja": "AR BRASIL", "itens": [{"sku": "SPN-LIFE-SX", "desc": "Spinning Sixxis Modelo:Life Preto", "qtd": 1.0}]}, {"envio": "48282006578", "venda": "2000019029708422", "nf": 4609, "loja": "AR BRASIL", "itens": [{"sku": "SPN-LIFE-SX", "desc": "Spinning Sixxis Modelo:Life Preto", "qtd": 1.0}]}, {"envio": "48330292832", "venda": "2000015668245557", "nf": 3948, "loja": "GOIANIA", "itens": [{"sku": "SPN-LIFE-SX", "desc": "Spinning Sixxis Modelo:Life Preto", "qtd": 1.0}]}, {"envio": "48321922731", "venda": "2000019114784564", "nf": 3949, "loja": "GOIANIA", "itens": [{"sku": "SPN-LIFE-SX", "desc": "Spinning Sixxis Modelo:Life Preto", "qtd": 1.0}]}, {"envio": "48283789032", "venda": "2000015575376405", "nf": 3950, "loja": "GOIANIA", "itens": [{"sku": "SPN-LIFE-SX", "desc": "Spinning Sixxis Modelo:Life Preto", "qtd": 1.0}]}, {"envio": "48316190703", "venda": "2000019102847844", "nf": 1656, "loja": "SAO PAULO", "itens": [{"sku": "SPN-LIFE-SX", "desc": "Spinning Sixxis Modelo:Life Preto", "qtd": 1.0}]}, {"envio": "48227025331", "venda": "2000018913936678", "nf": 4619, "loja": "AR BRASIL", "itens": [{"sku": "SPN-LIFE-SX", "desc": "Spinning Sixxis Modelo:Life Preto", "qtd": 1.0}]}, {"envio": "48306187781", "venda": "2000019082174674", "nf": 4618, "loja": "AR BRASIL", "itens": [{"sku": "SPN-LIFE-SX", "desc": "Spinning Sixxis Modelo:Life Preto", "qtd": 1.0}]}, {"envio": "48305844639", "venda": "2000019081483108", "nf": 4611, "loja": "AR BRASIL", "itens": [{"sku": "SPN-LIFE-SX", "desc": "Spinning Sixxis Modelo:Life Preto", "qtd": 1.0}]}, {"envio": "48306816806", "venda": "2000015621888279", "nf": 4610, "loja": "AR BRASIL", "itens": [{"sku": "SPN-LIFE-SX", "desc": "Spinning Sixxis Modelo:Life Preto", "qtd": 1.0}]}, {"envio": "48325238759", "venda": "2000019121536136", "nf": 1875, "loja": "IMPORTAÇÃO", "itens": [{"sku": "CLI-SX070-110", "desc": "Climatizador Sixxis SX070 Trend Voltagem:127V", "qtd": 1.0}]}, {"envio": "48324881513", "venda": "2000019120803090", "nf": 4616, "loja": "AR BRASIL", "itens": [{"sku": "SPN-LIFE-SX", "desc": "Spinning Sixxis Modelo:Life Preto", "qtd": 1.0}]}, {"envio": "48323958179", "venda": "2000019118907614", "nf": 4617, "loja": "AR BRASIL", "itens": [{"sku": "SPN-LIFE-SX", "desc": "Spinning Sixxis Modelo:Life Preto", "qtd": 1.0}]}, {"envio": "48134481287", "venda": "2000018714658678", "nf": 3936, "loja": "GOIANIA", "itens": [{"sku": "CLI-SX070-220", "desc": "Climatizador Sixxis SX070 Trend Voltagem:220V", "qtd": 1.0}]}, {"envio": "48309489806", "venda": "2000019088269636", "nf": 1652, "loja": "SAO PAULO", "itens": [{"sku": "SPN-LIFE-SX", "desc": "Spinning Sixxis Modelo:Life Preto", "qtd": 1.0}]}, {"envio": "48293794783", "venda": "2000019056485818", "nf": 1653, "loja": "SAO PAULO", "itens": [{"sku": "SPN-LIFE-SX", "desc": "Spinning Sixxis Modelo:Life Preto", "qtd": 1.0}]}, {"envio": "48298053420", "venda": "2000015604601031", "nf": 4613, "loja": "AR BRASIL", "itens": [{"sku": "SPN-LIFE-SX", "desc": "Spinning Sixxis Modelo:Life Preto", "qtd": 1.0}]}, {"envio": "48308080897", "venda": "2000015624971363", "nf": 4612, "loja": "AR BRASIL", "itens": [{"sku": "SPN-LIFE-SX", "desc": "Spinning Sixxis Modelo:Life Preto", "qtd": 1.0}]}]};
+const CHAVE_LS = 'sixxis-leitor-teste-v1';
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmtQ = n => Number.isInteger(n) ? String(n) : String(n).replace('.', ',');
+const agora = () => new Date().toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' });
+
+// ---------- índices ----------
+const UN = {}; DADOS.unidades.forEach(u => UN[u.serial] = u);
+const ENV = {}; DADOS.envios.forEach(e => ENV[e.envio] = e);
+const POR_CHAVE = {}; DADOS.envios.forEach(e => { if (e.chave) POR_CHAVE[e.chave] = e; });
+const MAPA = {}; DADOS.mapa.forEach(m => MAPA[m.sku] = m);
+
+// ---------- estado (só neste celular) ----------
+function novoEstado() {
+  const st = {}; DADOS.unidades.forEach(u => st[u.serial] = { s: 'BATIZADA' });
+  return { un: st, exp: {}, envioAtual: null, ultimaCx: [], inv: {}, log: [] };
+}
+let E;
+try { E = JSON.parse(localStorage.getItem(CHAVE_LS)) || novoEstado(); } catch (e) { E = novoEstado(); }
+DADOS.unidades.forEach(u => { if (!E.un[u.serial]) E.un[u.serial] = { s: 'BATIZADA' }; });
+function salvar() { try { localStorage.setItem(CHAVE_LS, JSON.stringify(E)); } catch (e) {} }
+
+// ---------- retorno (som, vibração, faixa) ----------
+let actx = null;
+function som(tipo) {
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    const notas = tipo === 'ok' ? [[1250, .09]] : tipo === 'av' ? [[900, .08], [900, .08]] : [[330, .35]];
+    let t = actx.currentTime;
+    notas.forEach(([f, d]) => { const o = actx.createOscillator(), g = actx.createGain(); o.frequency.value = f; o.connect(g); g.connect(actx.destination); g.gain.value = .25; o.start(t); o.stop(t + d); t += d + .06; });
+  } catch (e) {}
+  if (navigator.vibrate) navigator.vibrate(tipo === 'ok' ? 60 : tipo === 'av' ? [60, 50, 60] : [200, 80, 200]);
+}
+function msg(tipo, titulo, sub) {
+  const m = $('msg'); m.className = tipo || ''; m.innerHTML = esc(titulo) + (sub ? '<small>' + esc(sub) + '</small>' : '');
+  if (tipo) som(tipo);
+}
+function registrar(modo, lido, res, doc) {
+  E.log.unshift({ q: agora(), m: modo, l: lido, r: res, d: doc || '' });
+  if (E.log.length > 300) E.log.length = 300;
+}
+
+// ---------- o que foi lido? ----------
+function classificar(txt) {
+  const t = String(txt || '').trim();
+  try { const j = JSON.parse(t); if (j && j.id && j.t === 'lm') return { tipo: 'envio', v: String(j.id) }; } catch (e) {}
+  const dig = t.replace(/\s/g, '');
+  if (/^\d{11}$/.test(dig)) return { tipo: 'envio', v: dig };
+  if (/^\d{44}$/.test(dig)) return { tipo: 'chave', v: dig };
+  const up = t.toUpperCase();
+  if (/^[A-Z0-9][A-Z0-9-]*-\d{6}$/.test(up)) return { tipo: 'serial', v: up };
+  return { tipo: '?', v: t };
+}
+
+// ---------- modo atual ----------
+let MODO = 'entrada';
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  MODO = b.dataset.m;
+  document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('section[data-p]').forEach(s => s.classList.toggle('hidden', s.dataset.p !== MODO));
+  $('leitura').classList.toggle('hidden', MODO === 'situacao');
+  msg('', 'Pronto.', { entrada: 'Bipe as caixas do batismo.', expedicao: 'Bipe a etiqueta de envio (QR do Mercado Livre).', inventario: 'Bipe as caixas do depósito.', situacao: '' }[MODO]);
+  render();
+});
+
+function processar(txt, origem) {
+  const c = classificar(txt);
+  if (MODO === 'entrada') entrada(c);
+  else if (MODO === 'expedicao') expedicao(c);
+  else if (MODO === 'inventario') inventario(c);
+  salvar(); render();
+}
+
+// ---------- ENTRADA ----------
+function batAtual() { return DADOS.batismos.find(b => b.id === $('selBat').value) || DADOS.batismos[0]; }
+function entrada(c) {
+  if (c.tipo !== 'serial') { registrar('ENTRADA', c.v, 'não é serial'); return msg('er', 'Isso não é o serial de uma caixa', c.v); }
+  const u = UN[c.v], b = batAtual();
+  if (!u) { registrar('ENTRADA', c.v, 'serial não cadastrado'); return msg('er', 'Serial não cadastrado', c.v); }
+  if (u.sku !== b.sku) { registrar('ENTRADA', c.v, 'SKU diferente do batismo'); return msg('er', 'Caixa de outro produto', c.v + ' é ' + u.sku + ', o batismo é ' + b.sku); }
+  const st = E.un[c.v];
+  if (st.s === 'EM ESTOQUE') { registrar('ENTRADA', c.v, 'repetido'); return msg('av', 'Já conferida', c.v); }
+  if (st.s === 'EXPEDIDA') { registrar('ENTRADA', c.v, 'já expedida'); return msg('er', 'Esta caixa já foi expedida', c.v + ' · NF ' + st.nf + ' · envio ' + st.envio); }
+  const outro = u.batismo !== b.id;
+  E.un[c.v] = { s: 'EM ESTOQUE', q: agora() };
+  registrar('ENTRADA', c.v, outro ? 'ok (de outro batismo)' : 'ok', u.batismo);
+  if (outro) return msg('av', 'Conferida, mas é de outro batismo', c.v + ' pertence a ' + u.batismo);
+  msg('ok', c.v, 'Conferida');
+}
+$('eFechar').onclick = () => {
+  const b = batAtual();
+  const falt = DADOS.unidades.filter(u => u.batismo === b.id && E.un[u.serial].s === 'BATIZADA');
+  const box = $('eResumo'); box.classList.remove('hidden');
+  if (!falt.length) { box.innerHTML = '<h3>✅ Batismo completo</h3><p>Todas as ' + b.qtd + ' unidades conferidas.</p>'; return; }
+  box.innerHTML = '<h3>Faltam ' + falt.length + ' de ' + b.qtd + '</h3><p class="mono">' + esc(faixas(falt.map(u => u.n), b.prefixo)) + '</p>' +
+    '<div class="row"><button class="btn claro" id="eDepois">Continuar depois</button><button class="btn verm" id="eNL">Marcar não localizadas</button></div>';
+  $('eDepois').onclick = () => box.classList.add('hidden');
+  $('eNL').onclick = () => { falt.forEach(u => { E.un[u.serial] = { s: 'NÃO LOCALIZADA', q: agora() }; registrar('ENTRADA', u.serial, 'marcada não localizada', b.id); }); salvar(); box.classList.add('hidden'); render(); msg('av', falt.length + ' marcadas como não localizadas'); };
+};
+function faixas(nums, pref) {
+  nums.sort((a, b) => a - b); const out = []; let i = 0;
+  const f = n => pref + '-' + String(n).padStart(6, '0');
+  while (i < nums.length) { let j = i; while (j + 1 < nums.length && nums[j + 1] === nums[j] + 1) j++; out.push(i === j ? f(nums[i]) : f(nums[i]) + ' a ' + String(nums[j]).padStart(6, '0')); i = j + 1; }
+  return out.join(' · ');
+}
+
+// ---------- EXPEDIÇÃO ----------
+function progresso(env) {
+  const reg = E.exp[env.envio] || { cx: [] };
+  return env.itens.map(it => ({ sku: it.sku, desc: it.desc, qtd: it.qtd, feito: reg.cx.filter(s => UN[s] && UN[s].sku === it.sku).length, semMapa: !MAPA[it.sku] }));
+}
+function completo(env) { return progresso(env).every(p => p.feito >= p.qtd); }
+function abrirEnvio(env, lido) {
+  E.envioAtual = env.envio; E.exp[env.envio] = E.exp[env.envio] || { cx: [], ini: agora() };
+  registrar('EXPEDIÇÃO', lido, 'envio aberto', 'envio ' + env.envio + ' / NF ' + env.nf);
+  if (completo(env)) return msg('av', 'Envio já conferido', 'NF ' + env.nf + ' · ' + env.loja);
+  const p = progresso(env).filter(x => x.semMapa);
+  if (p.length) return msg('av', 'NF ' + env.nf + ' aberta, mas há SKU sem mapa', p.map(x => x.sku).join(', '));
+  msg('ok', 'NF ' + env.nf + ' · ' + env.loja, 'Agora bipe as caixas');
+}
+function expedicao(c) {
+  if (c.tipo === 'envio' || c.tipo === 'chave') {
+    const env = c.tipo === 'envio' ? ENV[c.v] : POR_CHAVE[c.v];
+    if (!env) { registrar('EXPEDIÇÃO', c.v, 'envio/NF não encontrado'); return msg('er', 'Etiqueta não encontrada nos lotes', c.v); }
+    const ant = E.envioAtual && ENV[E.envioAtual];
+    if (ant && ant.envio !== env.envio && !completo(ant)) { abrirEnvio(env, c.v); return msg('av', 'NF ' + env.nf + ' aberta — a NF ' + ant.nf + ' ficou incompleta', 'Ela aparece como pendente no romaneio'); }
+    return abrirEnvio(env, c.v);
+  }
+  if (c.tipo !== 'serial') { registrar('EXPEDIÇÃO', c.v, 'código não reconhecido'); return msg('er', 'Código não reconhecido', c.v); }
+  const env = E.envioAtual && ENV[E.envioAtual];
+  if (!env) { registrar('EXPEDIÇÃO', c.v, 'caixa sem etiqueta aberta'); return msg('er', 'Bipe primeiro a etiqueta de envio', 'Depois as caixas'); }
+  const u = UN[c.v];
+  if (!u) { registrar('EXPEDIÇÃO', c.v, 'serial não cadastrado', env.envio); return msg('er', 'Serial não cadastrado', c.v); }
+  const st = E.un[c.v], reg = E.exp[env.envio];
+  if (st.s === 'EXPEDIDA') {
+    if (st.envio === env.envio) { registrar('EXPEDIÇÃO', c.v, 'repetido', env.envio); return msg('av', 'Esta caixa já está nesta NF', c.v); }
+    registrar('EXPEDIÇÃO', c.v, 'já expedida em outra NF', env.envio); return msg('er', 'Caixa já expedida em outra NF', c.v + ' · NF ' + st.nf);
+  }
+  if (st.s === 'BATIZADA') { registrar('EXPEDIÇÃO', c.v, 'não deu entrada', env.envio); return msg('er', 'Caixa não conferida na entrada', c.v + ' — está como BATIZADA'); }
+  if (st.s === 'NÃO LOCALIZADA') { registrar('EXPEDIÇÃO', c.v, 'estava não localizada', env.envio); return msg('er', 'Caixa marcada como não localizada', 'Dê entrada nela de novo antes de expedir'); }
+  const p = progresso(env).find(x => x.sku === u.sku);
+  if (!p) { registrar('EXPEDIÇÃO', c.v, 'SKU fora da NF', env.envio); return msg('er', 'Produto errado para esta NF', c.v + ' é ' + u.sku + ' · a NF pede ' + env.itens.map(i => i.sku).join(', ')); }
+  if (p.feito >= p.qtd) { registrar('EXPEDIÇÃO', c.v, 'quantidade excedida', env.envio); return msg('er', 'Quantidade já completa', u.sku + ': ' + fmtQ(p.qtd) + ' de ' + fmtQ(p.qtd)); }
+  reg.cx.push(c.v);
+  E.un[c.v] = { s: 'EXPEDIDA', envio: env.envio, nf: env.nf, chave: env.chave, q: agora() };
+  E.ultimaCx.push(c.v);
+  registrar('EXPEDIÇÃO', c.v, 'ok', 'envio ' + env.envio + ' / NF ' + env.nf);
+  if (completo(env)) { reg.fim = agora(); return msg('ok', '✅ NF ' + env.nf + ' conferida', 'Pode colar a etiqueta. Bipe o próximo envio.'); }
+  msg('ok', c.v, u.sku + ' · ' + (p.feito + 1) + ' de ' + fmtQ(p.qtd));
+}
+$('xDesfazer').onclick = () => {
+  const s = E.ultimaCx.pop(); if (!s) return msg('av', 'Nada para desfazer');
+  const st = E.un[s]; const reg = E.exp[st.envio];
+  if (reg) { reg.cx = reg.cx.filter(x => x !== s); delete reg.fim; }
+  E.un[s] = { s: 'EM ESTOQUE', q: agora() };
+  registrar('EXPEDIÇÃO', s, 'desfeito', 'envio ' + st.envio);
+  salvar(); render(); msg('av', 'Desfeito: ' + s, 'Voltou para EM ESTOQUE');
+};
+$('xRomaneio').onclick = () => {
+  const ok = [], pend = [], nao = [];
+  DADOS.envios.forEach(e => { const r = E.exp[e.envio]; if (r && completo(e)) ok.push(e); else if (r) pend.push(e); else nao.push(e); });
+  const li = (e, extra) => '<li><b>NF ' + e.nf + '</b> · ' + esc(e.loja) + ' · envio ' + e.envio + (extra ? ' — ' + extra : '') + '</li>';
+  const box = $('xResumo'); box.classList.remove('hidden');
+  box.innerHTML = '<h3>Romaneio</h3>' +
+    '<p><span class="tag t-ok">' + ok.length + ' conferidas</span> <span class="tag t-av">' + pend.length + ' incompletas</span> <span class="tag t-er">' + nao.length + ' não bipadas</span></p>' +
+    (pend.length ? '<p class="muted">Incompletas</p><ul class="l">' + pend.map(e => li(e, progresso(e).map(p => p.sku + ' ' + p.feito + '/' + fmtQ(p.qtd)).join(', '))).join('') + '</ul>' : '') +
+    (nao.length ? '<p class="muted">Não bipadas</p><ul class="l">' + nao.map(e => li(e, e.itens.map(i => i.sku).join(', '))).join('') + '</ul>' : '') +
+    (ok.length ? '<p class="muted">Conferidas</p><ul class="l">' + ok.map(e => li(e, (E.exp[e.envio].cx || []).join(', '))).join('') + '</ul>' : '');
+};
+
+// ---------- INVENTÁRIO ----------
+function inventario(c) {
+  if (c.tipo !== 'serial') { registrar('INVENTÁRIO', c.v, 'não é serial'); return msg('er', 'Isso não é o serial de uma caixa', c.v); }
+  if (!UN[c.v]) { registrar('INVENTÁRIO', c.v, 'serial não cadastrado'); return msg('er', 'Serial não cadastrado', c.v); }
+  if (E.inv[c.v]) return msg('av', 'Já bipada no inventário', c.v);
+  E.inv[c.v] = agora();
+  const st = E.un[c.v];
+  registrar('INVENTÁRIO', c.v, st.s === 'EM ESTOQUE' ? 'ok' : 'sobra (' + st.s + ')');
+  if (st.s !== 'EM ESTOQUE') return msg('av', c.v + ' — sistema diz ' + st.s, st.s === 'EXPEDIDA' ? 'Expedida na NF ' + st.nf + ', mas está no depósito' : 'Vai aparecer como sobra');
+  msg('ok', c.v, UN[c.v].sku);
+}
+$('iNovo').onclick = () => { E.inv = {}; $('iResumo').classList.add('hidden'); salvar(); render(); msg('', 'Inventário recomeçado.', 'Bipe as caixas do depósito.'); };
+$('iFechar').onclick = () => {
+  const falt = DADOS.unidades.filter(u => E.un[u.serial].s === 'EM ESTOQUE' && !E.inv[u.serial]);
+  const sobra = Object.keys(E.inv).filter(s => E.un[s].s !== 'EM ESTOQUE');
+  const ok = Object.keys(E.inv).length - sobra.length;
+  const box = $('iResumo'); box.classList.remove('hidden');
+  box.innerHTML = '<h3>Resultado do inventário</h3>' +
+    '<p><span class="tag t-ok">' + ok + ' batem</span> <span class="tag t-er">' + falt.length + ' faltando</span> <span class="tag t-av">' + sobra.length + ' sobrando</span></p>' +
+    (falt.length ? '<p class="muted">Faltando (sistema diz EM ESTOQUE, não foram bipadas)</p><ul class="l">' + falt.map(u => '<li class="mono">' + u.serial + '</li>').join('') + '</ul>' : '') +
+    (sobra.length ? '<p class="muted">Sobrando (bipadas no depósito, mas o sistema diz outra coisa)</p><ul class="l">' + sobra.map(s => '<li><span class="mono">' + s + '</span> — ' + E.un[s].s + (E.un[s].nf ? ' NF ' + E.un[s].nf : '') + '</li>').join('') + '</ul>' : '');
+};
+
+// ---------- SITUAÇÃO ----------
+$('sZerar').onclick = function () {
+  if (this.dataset.c !== '1') { this.dataset.c = '1'; this.textContent = 'Toque de novo para confirmar'; setTimeout(() => { this.dataset.c = ''; this.textContent = 'Zerar teste'; }, 4000); return; }
+  E = novoEstado(); salvar(); this.dataset.c = ''; this.textContent = 'Zerar teste';
+  ['eResumo', 'xResumo', 'iResumo'].forEach(id => $(id).classList.add('hidden'));
+  render(); msg('av', 'Teste zerado');
+};
+
+// ---------- tela ----------
+const TAGST = { 'BATIZADA': 't-cz', 'EM ESTOQUE': 't-ok', 'EXPEDIDA': 't-av', 'NÃO LOCALIZADA': 't-er' };
+function render() {
+  // entrada
+  const b = batAtual(), uns = DADOS.unidades.filter(u => u.batismo === b.id);
+  const conf = uns.filter(u => E.un[u.serial].s !== 'BATIZADA' && E.un[u.serial].s !== 'NÃO LOCALIZADA').length;
+  $('eCont').textContent = conf + '/' + uns.length;
+  $('eGrid').innerHTML = uns.map(u => { const s = E.un[u.serial].s; return '<div class="' + (s === 'EM ESTOQUE' ? 'ok' : s === 'EXPEDIDA' ? 'ex' : s === 'NÃO LOCALIZADA' ? 'nl' : '') + '" title="' + u.serial + '">' + u.n + '</div>'; }).join('');
+  // expedição
+  const env = E.envioAtual && ENV[E.envioAtual];
+  $('xAtual').innerHTML = !env ? '<h3>Nenhuma etiqueta aberta</h3><p class="muted">Bipe o QR do Mercado Livre (ou o código de barras grande da etiqueta).</p>' :
+    '<h3>NF ' + env.nf + ' · ' + esc(env.loja) + (completo(env) ? ' <span class="tag t-ok">CONFERIDA</span>' : '') + '</h3>' +
+    '<div class="muted">Envio ' + env.envio + ' · venda ' + esc(env.venda || '') + '</div>' +
+    '<table style="margin-top:8px"><tr><th>SKU</th><th>Caixa</th><th>Conferido</th></tr>' +
+    progresso(env).map(p => '<tr><td><b>' + esc(p.sku) + '</b><div class="muted">' + esc(p.desc) + '</div></td><td class="mono">' + (MAPA[p.sku] ? esc(MAPA[p.sku].prefixo) + '-…' : '<span class="tag t-er">sem mapa</span>') + '</td><td><span class="tag ' + (p.feito >= p.qtd ? 't-ok' : 't-cz') + '">' + p.feito + ' / ' + fmtQ(p.qtd) + '</span></td></tr>').join('') + '</table>' +
+    (((E.exp[env.envio] || {}).cx || []).length ? '<p class="mono">' + E.exp[env.envio].cx.join(' · ') + '</p>' : '');
+  // inventário
+  $('iCont').textContent = Object.keys(E.inv).length;
+  // situação
+  const porSku = {};
+  DADOS.unidades.forEach(u => { const s = E.un[u.serial].s; porSku[u.sku] = porSku[u.sku] || { 'BATIZADA': 0, 'EM ESTOQUE': 0, 'EXPEDIDA': 0, 'NÃO LOCALIZADA': 0 }; porSku[u.sku][s]++; });
+  $('sTab').innerHTML = '<table><tr><th>SKU</th><th>Batizada</th><th>Em estoque</th><th>Expedida</th><th>Não loc.</th></tr>' +
+    Object.keys(porSku).map(k => '<tr><td><b>' + esc(k) + '</b></td><td>' + porSku[k]['BATIZADA'] + '</td><td><b>' + porSku[k]['EM ESTOQUE'] + '</b></td><td>' + porSku[k]['EXPEDIDA'] + '</td><td>' + porSku[k]['NÃO LOCALIZADA'] + '</td></tr>').join('') + '</table>';
+  $('sUn').innerHTML = '<table><tr><th>Serial</th><th>Status</th><th>Documento</th></tr>' +
+    DADOS.unidades.map(u => { const s = E.un[u.serial]; return '<tr><td class="mono">' + u.serial + '</td><td><span class="tag ' + TAGST[s.s] + '">' + s.s + '</span></td><td class="muted">' + (s.nf ? 'NF ' + s.nf + ' · ' + s.envio : '') + '</td></tr>'; }).join('') + '</table>';
+  $('sLog').innerHTML = E.log.slice(0, 60).map(l => '<li><span class="muted">' + l.q + ' · ' + l.m + '</span><br><span class="mono">' + esc(l.l) + '</span> — ' + esc(l.r) + (l.d ? ' <span class="muted">(' + esc(l.d) + ')</span>' : '') + '</li>').join('') || '<li class="muted">Nenhuma bipagem ainda.</li>';
+}
+$('selBat').innerHTML = DADOS.batismos.map(b => '<option value="' + b.id + '">' + b.prefixo + ' · ' + b.sku + ' · ' + b.qtd + ' un.</option>').join('');
+$('selBat').onchange = () => { $('eResumo').classList.add('hidden'); render(); };
+
+// ---------- entrada de leitura: câmera + teclado ----------
+const visto = {};   // a câmera lê o mesmo código várias vezes por segundo: só processa depois de 2,5 s sem vê-lo
+function lido(txt, origem) {
+  const t = String(txt || '').trim(); if (!t) return;
+  const n = Date.now(), ult = visto[t] || 0; visto[t] = n;
+  if (origem === 'câmera' && n - ult < 2500) return;
+  processar(t, origem);
+}
+let scanner = null, ligada = false;
+$('bCam').onclick = () => {
+  try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+  if (ligada) { scanner.stop().then(() => { ligada = false; $('bCam').textContent = 'Ligar câmera'; }).catch(() => {}); return; }
+  if (!window.Html5Qrcode) return msg('er', 'Biblioteca da câmera não carregou', 'Confira a internet');
+  const F = Html5QrcodeSupportedFormats;
+  scanner = scanner || new Html5Qrcode('reader', { formatsToSupport: [F.QR_CODE, F.CODE_128], verbose: false });
+  scanner.start({ facingMode: 'environment' }, { fps: 12, qrbox: (w, h) => { const s = Math.floor(Math.min(w, h) * .85); return { width: s, height: Math.floor(s * .6) }; } },
+    t => lido(t, 'câmera'), () => {})
+    .then(() => { ligada = true; $('bCam').textContent = 'Desligar câmera'; })
+    .catch(e => msg('er', 'Não abriu a câmera', String(e)));
+};
+$('manual').addEventListener('keydown', function (e) { if (e.key === 'Enter') { lido(this.value, 'teclado'); this.value = ''; } });
+
+render();
+</script>
+</body>
+</html>
