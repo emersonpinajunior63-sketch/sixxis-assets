@@ -6,6 +6,7 @@
 <title>Leitor Sixxis (teste)</title>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
   :root { --ok:#2e7d32; --av:#f9a825; --er:#c62828; --az:#1f6feb; --cz:#eceff3; --tx:#1d2329; --esc:#1f2a37; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -199,7 +200,7 @@ const MAPA = {}; DADOS.mapa.forEach(m => MAPA[m.sku] = m);
 // ---------- estado (só neste celular) ----------
 function novoEstado() {
   const st = {}; DADOS.unidades.forEach(u => st[u.serial] = { s: 'BATIZADA' });
-  return { un: st, rom: { lotes: [], ordem: [], nfs: {}, envio: {} }, exp: {}, aberto: null, ultimaCx: [], inv: { ini: null, b: {}, ord: [] }, log: [], cfg: { leitura: 'continuo' }, mestre: false };
+  return { un: st, rom: { lotes: [], ordem: [], nfs: {}, envio: {}, vinc: {} }, exp: {}, aberto: null, ultimaCx: [], inv: { ini: null, b: {}, ord: [] }, log: [], cfg: { leitura: 'continuo' }, mestre: false };
 }
 let E;
 try { E = JSON.parse(localStorage.getItem(CHAVE_LS)) || novoEstado(); } catch (e) { E = novoEstado(); }
@@ -309,29 +310,64 @@ function lerXml(txt) {
     itens: Object.values(juntos) } };
 }
 async function textosDosArquivos(files) {
-  const out = [];
+  const out = [], pdfs = [];
   for (const f of files) {
     // o Android/Drive nem sempre informa o tipo nem a extensão: decide pelo conteúdo
     const ini = new Uint8Array(await f.slice(0, 4).arrayBuffer());
-    const ehZip = ini[0] === 0x50 && ini[1] === 0x4B;          // "PK"
-    if (ehZip) {
+    if (ini[0] === 0x50 && ini[1] === 0x4B) {                       // "PK" = .zip
       if (!window.JSZip) throw new Error('Leitor de .zip não carregou (confira a internet)');
       const z = await JSZip.loadAsync(f);
-      for (const nome of Object.keys(z.files)) if (/\.xml$/i.test(nome) && !z.files[nome].dir) out.push(await z.files[nome].async('string'));
+      for (const nome of Object.keys(z.files)) {
+        if (z.files[nome].dir) continue;
+        if (/\.xml$/i.test(nome)) out.push(await z.files[nome].async('string'));
+        else if (/\.pdf$/i.test(nome)) pdfs.push(await z.files[nome].async('uint8array'));
+      }
+    } else if (ini[0] === 0x25 && ini[1] === 0x50 && ini[2] === 0x44 && ini[3] === 0x46) {   // "%PDF"
+      pdfs.push(new Uint8Array(await f.arrayBuffer()));
     } else {
       const txt = await f.text();
-      if (/^\s*(\uFEFF)?</.test(txt)) out.push(txt);
+      if (/^\s*(﻿)?</.test(txt)) out.push(txt);
     }
   }
-  if (!out.length) throw new Error('Nenhum XML encontrado nos arquivos escolhidos');
-  return out;
+  if (!out.length && !pdfs.length) throw new Error('Nenhum XML ou PDF de etiqueta nos arquivos escolhidos');
+  return { xmls: out, pdfs };
+}
+// PDF do Etiqueta Casada: em cada página, o número do envio do ML (ex.: "483302 92832", o mesmo do QR) e a chave do DANFE.
+// Uma etiqueta de pack pode ter mais de um DANFE em páginas seguidas: a página sem envio herda o envio anterior.
+async function vinculosDoPdf(bytes) {
+  if (!window.pdfjsLib) throw new Error('Leitor de PDF não carregou (confira a internet)');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const doc = await pdfjsLib.getDocument({ data: bytes }).promise, pares = [];
+  let ultimo = null;
+  for (let i = 1; i <= doc.numPages; i++) {
+    const tc = await (await doc.getPage(i)).getTextContent();
+    const txt = tc.items.map(x => x.str).join(' ').replace(/\s+/g, ' ');
+    const tok = txt.split(' ');
+    let envio = null;
+    for (let j = 0; j + 1 < tok.length; j++) if (/^\d{6}$/.test(tok[j]) && /^\d{5}$/.test(tok[j + 1])) { envio = tok[j] + tok[j + 1]; break; }
+    const m = txt.match(/(?:\d{4} ){10}\d{4}/);
+    const chave = m ? m[0].replace(/\D/g, '') : null;
+    if (envio) ultimo = envio;
+    if (chave && (envio || ultimo)) pares.push({ envio: envio || ultimo, chave });
+  }
+  return pares;
+}
+function ligar(envio, chave) {
+  E.rom.vinc[chave] = envio;
+  const n = E.rom.nfs[chave];
+  if (n) { n.envio = envio; E.rom.envio[envio] = chave; return true; }
+  return false;
 }
 async function adicionarLote(files) {
   if (!E.mestre) return msg('er', 'Só o faturista adiciona NFs ao romaneio');
-  let textos;
-  try { textos = await textosDosArquivos(files); } catch (e) { return msg('er', 'Não consegui abrir os arquivos', String(e.message || e)); }
-  const r = { add: 0, dup: 0, ign: 0, canc: 0, sem: 0 }, nLote = E.rom.lotes.length + 1;
-  for (const t of textos) {
+  let arq, pares = [];
+  try {
+    arq = await textosDosArquivos(files);
+    for (const b of arq.pdfs) pares = pares.concat(await vinculosDoPdf(b));
+  } catch (e) { return msg('er', 'Não consegui abrir os arquivos', String(e.message || e)); }
+  E.rom.vinc = E.rom.vinc || {};
+  const r = { add: 0, dup: 0, ign: 0, canc: 0, sem: 0, lig: 0, ligRom: 0 }, nLote = E.rom.lotes.length + 1;
+  for (const t of arq.xmls) {
     const x = lerXml(t);
     if (x.tipo === 'cancelamento') { const n = E.rom.nfs[x.chave]; if (n && !n.canc) { n.canc = true; r.canc++; registrar('EXPEDIÇÃO', 'NF ' + n.nf, 'NF cancelada (XML de cancelamento)'); } continue; }
     if (x.tipo !== 'nfe') { r.ign++; continue; }
@@ -339,14 +375,20 @@ async function adicionarLote(files) {
     if (E.rom.nfs[n.chave]) { r.dup++; continue; }
     const v = POR_HASH[await sha(n.chave)];
     if (v) { n.envio = v.envio; E.rom.envio[v.envio] = n.chave; }
+    if (E.rom.vinc[n.chave]) { n.envio = E.rom.vinc[n.chave]; E.rom.envio[n.envio] = n.chave; }
     n.lote = nLote; E.rom.nfs[n.chave] = n; E.rom.ordem.push(n.chave); r.add++;
     if (n.itens.some(i => !temSerial(i.sku))) r.sem++;
   }
-  if (!r.add && !r.canc) return msg('av', 'Nenhuma NF nova no lote', r.dup + ' já estavam no romaneio · ' + r.ign + ' ignorado(s)');
+  pares.forEach(x => { r.lig++; if (ligar(x.envio, x.chave)) r.ligRom++; });
+  if (!r.add && !r.canc) {
+    if (r.lig) { registrar('EXPEDIÇÃO', 'PDF etiquetas', r.lig + ' etiquetas ML ligadas'); salvar(); render();
+      return msg('ok', r.lig + ' etiqueta(s) do ML ligada(s) às NFs', r.ligRom + ' já estão no romaneio' + (r.lig > r.ligRom ? ' · ' + (r.lig - r.ligRom) + ' esperando o XML da NF' : '')); }
+    return msg('av', 'Nenhuma NF nova no lote', r.dup + ' já estavam no romaneio · ' + r.ign + ' ignorado(s)');
+  }
   E.rom.lotes.push({ n: nLote, q: agora(), add: r.add, dup: r.dup, ign: r.ign, canc: r.canc });
   registrar('EXPEDIÇÃO', 'lote ' + nLote, r.add + ' NFs adicionadas' + (r.canc ? ', ' + r.canc + ' canceladas' : ''));
   salvar(); render();
-  msg('ok', 'Lote ' + nLote + ': ' + r.add + ' NF(s) no romaneio', [r.dup ? r.dup + ' já estavam' : '', r.ign ? r.ign + ' ignorado(s) (entrada, não autorizada ou outro XML)' : '', r.canc ? r.canc + ' cancelada(s)' : '', r.sem ? r.sem + ' com itens sem serial (conferidos só pela NF)' : ''].filter(Boolean).join(' · '));
+  msg('ok', 'Lote ' + nLote + ': ' + r.add + ' NF(s) no romaneio', [r.dup ? r.dup + ' já estavam' : '', r.ign ? r.ign + ' ignorado(s) (entrada, não autorizada ou outro XML)' : '', r.canc ? r.canc + ' cancelada(s)' : '', r.sem ? r.sem + ' com itens sem serial (conferidos só pela NF)' : '', r.lig ? r.lig + ' etiqueta(s) ML ligada(s)' : ''].filter(Boolean).join(' · '));
 }
 $('rArq').onchange = function () { const f = Array.from(this.files || []); this.value = ''; if (f.length) adicionarLote(f); };
 $('rAdd').onclick = () => $('rArq').click();
@@ -372,7 +414,7 @@ function expedicao(c) {
     if (n) return abrir(n, c.v);
     const v = ENV[c.v];
     if (v) return foraDoRomaneio(v.nf, v.loja, c.v);
-    registrar('EXPEDIÇÃO', c.v, 'etiqueta ML sem vínculo'); return msg('er', 'Etiqueta ML sem NF vinculada', c.v + ' — bipe a chave da DANFE');
+    registrar('EXPEDIÇÃO', c.v, 'etiqueta ML sem vínculo'); return msg('er', 'Etiqueta ML sem NF ligada', 'O faturista adiciona o PDF da etiqueta casada junto com os XMLs. Ou bipe a chave da DANFE.');
   }
   if (c.tipo === 'chave') {
     const n = E.rom.nfs[c.v];
@@ -429,7 +471,7 @@ $('xNovoDia').onclick = function () {
   if (!E.mestre) return msg('er', 'Só o faturista começa um novo dia');
   if (this.dataset.c !== '1') { this.dataset.c = '1'; this.textContent = 'Toque de novo'; setTimeout(() => { this.dataset.c = ''; this.textContent = 'Novo dia'; }, 4000); return; }
   registrar('EXPEDIÇÃO', '-', 'romaneio encerrado (' + NFS().filter(completo).length + '/' + NFS().length + ' NFs conferidas)');
-  E.rom = { lotes: [], ordem: [], nfs: {}, envio: {} }; E.exp = {}; E.aberto = null; E.ultimaCx = [];
+  E.rom = { lotes: [], ordem: [], nfs: {}, envio: {}, vinc: {} }; E.exp = {}; E.aberto = null; E.ultimaCx = [];
   this.dataset.c = ''; this.textContent = 'Novo dia'; $('xResumo').classList.add('hidden'); salvar(); render(); msg('av', 'Romaneio zerado para um novo dia', 'As caixas expedidas continuam expedidas');
 };
 
