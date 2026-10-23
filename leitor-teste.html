@@ -1,0 +1,78 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Teste leitor Sixxis</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 12px; background: #f4f5f7; }
+  h2 { margin: 4px 0 10px; font-size: 18px; }
+  #reader { width: 100%; max-width: 480px; background: #000; border-radius: 8px; overflow: hidden; }
+  button { font-size: 16px; padding: 12px 16px; border: 0; border-radius: 8px; background: #1f6feb; color: #fff; margin: 8px 8px 8px 0; }
+  #parar { background: #666; }
+  #status { margin: 6px 0; font-size: 14px; color: #333; }
+  .erro { color: #c62828 !important; font-weight: 600; }
+  #cont { font-size: 28px; font-weight: 700; margin: 6px 0; }
+  ul { list-style: none; padding: 0; margin: 0; }
+  li { background: #fff; border-left: 6px solid #2e7d32; margin: 4px 0; padding: 8px; font-family: monospace; font-size: 14px; word-break: break-all; }
+  li.rep { border-left-color: #f9a825; }
+  #manual { width: 100%; max-width: 460px; font-size: 16px; padding: 10px; margin-top: 8px; box-sizing: border-box; }
+</style>
+</head>
+<body>
+<h2>Teste do leitor (câmera) — fora do Apps Script</h2>
+<button id="ligar">Ligar câmera</button><button id="parar">Parar</button>
+<div id="status">Câmera desligada.</div>
+<div id="reader"></div>
+<div id="cont">0 lidos</div>
+<input id="manual" placeholder="Leitor Bluetooth/teclado: bipe aqui (Enter)">
+<ul id="lista"></ul>
+
+<script>
+  var lidos = {}, total = 0, ultimo = '', ultimoT = 0, scanner = null;
+  var st = document.getElementById('status');
+
+  function bip(ok) {
+    try {
+      var ctx = new (window.AudioContext || window.webkitAudioContext)();
+      var o = ctx.createOscillator(); o.frequency.value = ok ? 1200 : 400;
+      o.connect(ctx.destination); o.start(); setTimeout(function(){ o.stop(); ctx.close(); }, ok ? 90 : 250);
+    } catch (e) {}
+    if (navigator.vibrate) navigator.vibrate(ok ? 60 : [80, 60, 80]);
+  }
+
+  function registrar(txt, origem) {
+    txt = String(txt || '').trim(); if (!txt) return;
+    var agora = Date.now();
+    if (txt === ultimo && agora - ultimoT < 2000) return;   // a câmera lê o mesmo código várias vezes por segundo
+    ultimo = txt; ultimoT = agora;
+    var rep = !!lidos[txt]; lidos[txt] = true; if (!rep) total++;
+    var li = document.createElement('li'); if (rep) li.className = 'rep';
+    li.textContent = (rep ? '[repetido] ' : '') + txt + '  (' + origem + ', ' + txt.length + ' car.)';
+    var ul = document.getElementById('lista'); ul.insertBefore(li, ul.firstChild);
+    document.getElementById('cont').textContent = total + ' lidos';
+    bip(!rep);
+  }
+
+  document.getElementById('ligar').onclick = function () {
+    st.className = ''; st.textContent = 'Pedindo permissão da câmera...';
+    if (!window.Html5Qrcode) { st.className = 'erro'; st.textContent = 'Biblioteca não carregou (bloqueio de rede?).'; return; }
+    var F = Html5QrcodeSupportedFormats;
+    scanner = new Html5Qrcode('reader', { formatsToSupport: [F.QR_CODE, F.CODE_128, F.DATA_MATRIX, F.EAN_13], verbose: false });
+    scanner.start({ facingMode: 'environment' },
+      { fps: 12, qrbox: function (w, h) { var s = Math.floor(Math.min(w, h) * 0.8); return { width: s, height: Math.floor(s * 0.6) }; } },
+      function (txt) { registrar(txt, 'câmera'); },
+      function () {})
+    .then(function () { st.textContent = 'Câmera ligada: aponte para o QR ou código de barras.'; })
+    .catch(function (e) { st.className = 'erro'; st.textContent = 'FALHOU ao abrir a câmera: ' + e; });
+  };
+  document.getElementById('parar').onclick = function () {
+    if (scanner) scanner.stop().then(function(){ st.textContent = 'Câmera desligada.'; }).catch(function(){});
+  };
+  document.getElementById('manual').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { registrar(this.value, 'teclado'); this.value = ''; }
+  });
+</script>
+</body>
+</html>
