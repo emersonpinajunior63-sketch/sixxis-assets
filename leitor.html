@@ -111,7 +111,7 @@
       <div class="row" style="justify-content:space-between;margin-top:0">
         <div><span class="grande" id="rCont">0/0</span> <span class="muted">NFs conferidas</span></div>
         <button class="btn" id="rAdd">Adicionar lote (XML)</button>
-        <input type="file" id="rArq" accept=".xml,.zip,text/xml,application/zip" multiple hidden>
+        <input type="file" id="rArq" multiple hidden>
       </div>
       <div id="rImpr" class="muted"></div>
     </div>
@@ -311,12 +311,19 @@ function lerXml(txt) {
 async function textosDosArquivos(files) {
   const out = [];
   for (const f of files) {
-    if (/\.zip$/i.test(f.name)) {
+    // o Android/Drive nem sempre informa o tipo nem a extensão: decide pelo conteúdo
+    const ini = new Uint8Array(await f.slice(0, 4).arrayBuffer());
+    const ehZip = ini[0] === 0x50 && ini[1] === 0x4B;          // "PK"
+    if (ehZip) {
       if (!window.JSZip) throw new Error('Leitor de .zip não carregou (confira a internet)');
       const z = await JSZip.loadAsync(f);
       for (const nome of Object.keys(z.files)) if (/\.xml$/i.test(nome) && !z.files[nome].dir) out.push(await z.files[nome].async('string'));
-    } else if (/\.xml$/i.test(f.name)) out.push(await f.text());
+    } else {
+      const txt = await f.text();
+      if (/^\s*(\uFEFF)?</.test(txt)) out.push(txt);
+    }
   }
+  if (!out.length) throw new Error('Nenhum XML encontrado nos arquivos escolhidos');
   return out;
 }
 async function adicionarLote(files) {
