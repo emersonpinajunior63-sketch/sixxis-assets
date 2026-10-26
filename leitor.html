@@ -186,7 +186,7 @@
       <label class="f">Lotes / observação (opcional)</label>
       <input class="txt" id="bLotes" placeholder="Ex.: lotes A, B e C misturados">
       <div class="row"><button class="btn" id="bGerar">Batizar e baixar planilha</button></div>
-      <p class="muted">Baixa um arquivo .xls (a datadora não abre .xlsx) com uma coluna, sem cabeçalho, um serial por linha. Copie para o pen drive e, na datadora, troque o arquivo da Planilha e do QR pelo novo.</p>
+      <p class="muted">Baixa um arquivo .xls (a datadora não abre .xlsx) com uma coluna, sem cabeçalho, um serial por linha. Copie para o pen drive e, na datadora, troque o arquivo da Planilha e do QR pelo novo. Depois do último serial vêm 20 linhas "FIM DO LOTE": quando aparecer na tela da datadora, pare.</p>
       <div id="bRes"></div>
     </div>
     <div class="card"><h3>Batismos</h3><div id="bLista"></div></div>
@@ -595,6 +595,9 @@ $('selBat').onchange = () => { $('eResumo').classList.add('hidden'); render(); }
 function baixarPlanilha(prefixo, de, ate) {
   if (!window.XLSX) return msg('er', 'Gerador de planilha não carregou (confira a internet)');
   const linhas = []; for (let i = de; i <= ate; i++) linhas.push([prefixo + '-' + String(i).padStart(6, '0')]);
+  // Trava de fim de lote: a datadora volta para a 1ª linha depois da última (testado 26/10/2026).
+  // Estas linhas aparecem na tela dela no lugar do próximo número; impressas por engano, não são serial (o leitor recusa).
+  for (let i = 0; i < 20; i++) linhas.push(['FIM DO LOTE']);
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(linhas), 'Plan1');
   // .xls (Excel 97, biff8): a datadora não abre .xlsx. bookSST = textos na tabela compartilhada (LABELSST);
   // sem isso a datadora abre o arquivo mas mostra a lista vazia (testado em 26/10/2026)
