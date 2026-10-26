@@ -46,6 +46,7 @@
   #msg.ok { background: var(--ok); color: #fff; } #msg.av { background: var(--av); color: #222; } #msg.er { background: var(--er); color: #fff; }
   .card { background: #fff; border-radius: 10px; padding: 12px; margin: 10px 0; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
   .card h3 { margin: 0 0 8px; font-size: 15px; }
+  .card h4 { margin: 14px 0 4px; font-size: 13px; color: #5b6470; text-transform: uppercase; letter-spacing: .03em; }
   .grande { font-size: 30px; font-weight: 700; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 4px; }
   .grid div { background: var(--cz); border-radius: 5px; text-align: center; padding: 8px 0; font-size: 13px; font-variant-numeric: tabular-nums; }
@@ -160,10 +161,17 @@
       <p class="muted">Qualquer ordem. Cinza = falta · verde = conferida · azul-acinzentado = já expedida · vermelho = não localizada.</p>
     </div>
     <div class="card hidden" id="eResumo"></div>
+    <div class="card hidden" id="eLanc"></div>
   </section>
 
   <!-- SITUAÇÃO -->
   <section id="t-situacao" class="hidden">
+    <div class="card" id="rastCard">
+      <h3>Rastrear caixa</h3>
+      <p class="muted">Bipe a caixa (câmera acima) ou digite o serial: mostra a história dela, do batismo ao cliente.</p>
+      <div class="row"><input class="txt" id="rastIn" placeholder="Ex.: LIFEPT-000123" autocapitalize="characters" style="flex:1"><button class="btn" id="rastBtn">Rastrear</button></div>
+      <div id="rastRes"></div>
+    </div>
     <div class="card"><h3>Estoque por SKU (seriais)</h3><div id="sTab"></div></div>
     <div class="card">
       <h3>Procurar serial ou NF</h3>
@@ -347,10 +355,10 @@ function ir(t) {
   if (t !== 'menu' && !podeTela(t)) return;
   TELA = t;
   ['inicio', 'menu', 'expedicao', 'inventario', 'entrada', 'situacao', 'batismo'].forEach(x => $('t-' + x).classList.toggle('hidden', x !== t));
-  $('leitura').classList.toggle('hidden', !['expedicao', 'inventario', 'entrada'].includes(t));
+  $('leitura').classList.toggle('hidden', !['expedicao', 'inventario', 'entrada', 'situacao'].includes(t));
   $('hVoltar').classList.toggle('hidden', t === 'menu');
   $('hTit').textContent = TITULOS[t];
-  if (t !== 'menu') msg('', 'Pronto.', { entrada: 'Bipe as caixas do batismo.', expedicao: 'Bipe a etiqueta (ou a DANFE) e depois o produto.', inventario: 'Bipe as caixas do depósito.' }[t] || '');
+  if (t !== 'menu') msg('', 'Pronto.', { entrada: 'Bipe as caixas do batismo.', expedicao: 'Bipe a etiqueta (ou a DANFE) e depois o produto.', inventario: 'Bipe as caixas do depósito.', situacao: 'Bipe uma caixa para ver a história dela.' }[t] || '');
   window.scrollTo(0, 0);
   render();
 }
@@ -364,6 +372,7 @@ function processar(txt) {
   if (TELA === 'entrada') entrada(c);
   else if (TELA === 'expedicao') expedicao(c);
   else if (TELA === 'inventario') inventario(c);
+  else if (TELA === 'situacao') { if (c.tipo === 'serial') { $('rastIn').value = c.v; rastrear(c.v); } else msg('er', 'Isso não é o serial de uma caixa', c.v); return; }
   else return;
   render();
 }
@@ -449,6 +458,7 @@ $('xNovoDia').onclick = function () {
 async function esperarFila() { for (let i = 0; i < 20 && FILA.length; i++) { await enviar(); if (FILA.length) await new Promise(r => setTimeout(r, 800)); } }
 
 // ---------- adicionar lote: XMLs (.xml/.zip) + PDF da etiqueta casada ----------
+const CANAL_CNPJ = { '03007331000141': 'Mercado Livre', '35635824000112': 'Shopee', '47960950000121': 'Magalu', '15436940000103': 'Amazon' };
 function lerXml(txt) {
   const doc = new DOMParser().parseFromString(txt, 'application/xml');
   if (doc.getElementsByTagName('parsererror').length) return { tipo: 'erro' };
@@ -467,8 +477,18 @@ function lerXml(txt) {
   Array.from(inf.getElementsByTagName('det')).forEach(d => { const p = d.getElementsByTagName('prod')[0];
     const sku = tag(p, 'cProd').toUpperCase(), q = parseFloat(tag(p, 'qCom')) || 0;
     if (juntos[sku]) juntos[sku].qtd += q; else juntos[sku] = { sku: sku, qtd: q }; });
+  // venda: destinatário (nome, cidade, UF — o CPF/CNPJ não é guardado), pedido, canal e vendedor
+  const dest = inf.getElementsByTagName('dest')[0];
+  const cpl = tag(inf.getElementsByTagName('infAdic')[0], 'infCpl').replace(/<[^>]*>/g, ' | ');
+  const mPed = cpl.match(/Ref\.?\s*Pedido\s*n\S*\s*(\d+)/i);
+  const mLoja = cpl.replace(/\d{44}/g, '').match(/pedido[^\d|]{0,40}?(\d{10,20})/i);
+  const mVend = cpl.match(/Ve\w{0,3}dor\s*:\s*([^|]+)/i);
+  const intermed = tag(inf.getElementsByTagName('infIntermed')[0], 'CNPJ');
+  const canal = CANAL_CNPJ[intermed] || (intermed ? 'Marketplace ' + intermed : (tag(ide, 'indIntermed') === '1' ? 'Marketplace' : 'Venda direta'));
+  const pedido = [mPed ? mPed[1] : '', mLoja && (!mPed || mLoja[1] !== mPed[1]) ? 'loja ' + mLoja[1] : ''].filter(Boolean).join(' · ');
   return { tipo: 'nfe', nf: { chave, nf: tag(ide, 'nNF'), serie: tag(ide, 'serie'), cnpj: tag(emit, 'CNPJ'), loja: tag(emit, 'xNome'),
-    emi: tag(ide, 'dhEmi').slice(0, 10).split('-').reverse().join('/'), itens: Object.values(juntos) } };
+    emi: tag(ide, 'dhEmi').slice(0, 10).split('-').reverse().join('/'), itens: Object.values(juntos),
+    cli: tag(dest, 'xNome'), mun: tag(dest, 'xMun'), uf: tag(dest, 'UF'), pedido, canal, vend: mVend ? mVend[1].trim() : '' } };
 }
 async function arquivos(files) {
   const xmls = [], pdfs = [];
@@ -589,7 +609,44 @@ function faixas(nums, prefixo) {
   while (i < nums.length) { let j = i; while (j + 1 < nums.length && nums[j + 1] === nums[j] + 1) j++; out.push(i === j ? f(nums[i]) : f(nums[i]) + ' a ' + String(nums[j]).padStart(6, '0')); i = j + 1; }
   return out.join(' · ');
 }
-$('selBat').onchange = () => { $('eResumo').classList.add('hidden'); render(); };
+$('selBat').onchange = () => { $('eResumo').classList.add('hidden'); LANC = null; render(); };
+
+// ---------- Lançar no estoque (faturista): grava na ENTRADAS_LOG da planilha ----------
+let LANC = null;   // prévia aberta { batismo, ... }
+function lancRender(b) {
+  const box = $('eLanc');
+  if (!b || !faturista()) { box.classList.add('hidden'); return; }
+  box.classList.remove('hidden');
+  if (b.lanc) { box.innerHTML = '<h3>Estoque da planilha</h3><p>✅ Lançado: ' + esc(b.lanc) + '</p>'; LANC = null; return; }
+  const pend = Object.keys(S.un).filter(s => S.un[s].b === b.id && S.un[s].s === ST.BAT).length;
+  if (pend) { box.innerHTML = '<h3>Estoque da planilha</h3><p class="muted">Depois de conferir todas as caixas (ou marcar as que faltarem como não localizadas), lance aqui no estoque. Faltam ' + pend + '.</p>'; LANC = null; return; }
+  if (LANC && LANC.batismo === b.id) return;   // prévia na tela: não redesenha
+  box.innerHTML = '<h3>Lançar no estoque</h3><p class="muted">Conferência completa. Isso grava na ENTRADAS_LOG (a mesma do "Dar Entrada"). Que lote é este?</p>' +
+    '<div class="row"><button class="btn" id="lChegada">Mercadoria nova (chegada)</button></div>' +
+    '<div class="row"><button class="btn claro" id="lReconta">Recontagem (já estava no estoque)</button></div>';
+  $('lChegada').onclick = () => lancPrevia(b, 'chegada');
+  $('lReconta').onclick = () => lancPrevia(b, 'recontagem');
+}
+async function lancPrevia(b, tipo) {
+  const box = $('eLanc'); box.innerHTML = '<p class="muted">Calculando…</p>';
+  try {
+    await esperarFila();
+    const r = await api('lancar', { batismo: b.id, tipo });
+    LANC = r;
+    const sinal = n => (n > 0 ? '+' : '') + n;
+    let txt;
+    if (tipo === 'chegada') txt = '<p>Vai lançar <b>Chegada ' + sinal(r.lanca) + '</b> de ' + esc(r.desc || r.sku) + ' (' + esc(r.sku) + ').</p><p class="muted">' + r.conf + ' conferida(s) de ' + r.qtd + ' batizada(s)' + (r.nl ? ' · ' + r.nl + ' não localizada(s) ficam fora' : '') + '. Saldo loja hoje: ' + r.saldoLoja + ' → passa a ' + (r.saldoLoja + r.lanca) + '.</p>';
+    else txt = '<table><tr><td class="muted">Contadas no batismo</td><td><b>' + r.conf + '</b></td></tr><tr><td class="muted">Saldo loja na planilha</td><td>' + r.saldoLoja + '</td></tr>' +
+      (r.pendRom ? '<tr><td class="muted">Vendidas aguardando expedição</td><td>+ ' + r.pendRom + '</td></tr>' : '') + '<tr><td class="muted">Esperado no barracão</td><td>' + r.esperado + '</td></tr></table>' +
+      (r.dif === 0 ? '<p>✅ <b>Bateu.</b> Nada é lançado; o batismo fica marcado como conferido com o estoque.</p>' : '<p>Diferença <b>' + sinal(r.dif) + '</b>: vai lançar um <b>Ajuste ' + sinal(r.dif) + '</b> na ENTRADAS_LOG.</p>');
+    box.innerHTML = '<h3>' + (tipo === 'chegada' ? 'Mercadoria nova' : 'Recontagem') + ' · ' + esc(b.id) + '</h3>' + txt +
+      '<div class="row"><button class="btn claro" id="lVoltar">Voltar</button><button class="btn" id="lOk">' + (tipo === 'recontagem' && r.dif === 0 ? 'Marcar como conferido' : 'Lançar no estoque') + '</button></div>';
+    $('lVoltar').onclick = () => { LANC = null; render(); };
+    $('lOk').onclick = function () { confirmar(this, this.textContent, async () => {
+      try { const f = await api('lancar', { batismo: b.id, tipo, confirmar: true }); LANC = null; await carregar(true); msg('ok', 'Lançado no estoque', f.marca); }
+      catch (e) { LANC = null; render(); msg('er', 'Não foi possível lançar', e.message); } }); };
+  } catch (e) { LANC = null; box.innerHTML = '<p class="tag t-er">' + esc(e.message) + '</p>'; msg('er', 'Não foi possível', e.message); }
+}
 
 // ================= BATISMO (faturista) =================
 function baixarPlanilha(prefixo, de, ate) {
@@ -666,6 +723,7 @@ function render() {
     $('eCont').textContent = uns.filter(u => u.s !== ST.BAT && u.s !== ST.NL).length + '/' + uns.length;
     $('eGrid').innerHTML = uns.map(u => '<div class="' + (u.s === ST.EST ? 'ok' : u.s === ST.EXP ? 'ex' : u.s === ST.NL ? 'nl' : '') + '">' + u.n + '</div>').join('');
   } else { $('eCont').textContent = '0/0'; $('eGrid').innerHTML = ''; }
+  lancRender(b);
 
   // situação
   const porSku = {};
@@ -688,9 +746,35 @@ function render() {
 function buscar() {
   const q = $('sBusca').value.trim().toUpperCase(); if (!q) { $('sRes').innerHTML = ''; return; }
   const achou = Object.keys(S.un).filter(s => s.indexOf(q) >= 0 || S.un[s].nf === q).slice(0, 30);
-  $('sRes').innerHTML = achou.length ? '<table>' + achou.map(s => { const u = S.un[s]; return '<tr><td class="mono">' + s + '</td><td><span class="tag ' + TAGST[u.s] + '">' + u.s + '</span></td><td class="muted">' + (u.nf ? 'NF ' + esc(u.nf) : esc(u.b)) + '</td></tr>'; }).join('') + '</table>' : '<p class="muted">Nada encontrado.</p>';
+  $('sRes').innerHTML = achou.length ? '<table>' + achou.map(s => { const u = S.un[s]; return '<tr><td class="mono"><a href="#" data-rast="' + s + '">' + s + '</a></td><td><span class="tag ' + TAGST[u.s] + '">' + u.s + '</span></td><td class="muted">' + (u.nf ? 'NF ' + esc(u.nf) : esc(u.b)) + '</td></tr>'; }).join('') + '</table>' : '<p class="muted">Nada encontrado.</p>';
 }
 $('sBusca').oninput = buscar;
+$('sRes').onclick = e => { const a = e.target.closest('[data-rast]'); if (!a) return; e.preventDefault(); $('rastIn').value = a.dataset.rast; rastrear(a.dataset.rast); $('rastCard').scrollIntoView({ behavior: 'smooth' }); };
+
+// ================= RASTREAR (história da caixa) =================
+const MODO_TXT = { 'BATISMO': '🏷️ Batizada', 'ENTRADA': '📦 Entrada', 'EXPEDIÇÃO': '🚚 Expedição', 'INVENTÁRIO': '📋 Inventário', 'ESTOQUE': '🧾 Estoque' };
+async function rastrear(serial) {
+  serial = String(serial || '').trim().toUpperCase(); if (!serial) return;
+  const box = $('rastRes'); box.innerHTML = '<p class="muted">Buscando ' + esc(serial) + '…</p>';
+  try {
+    const r = await api('rastrear', { serial });
+    if (!r.achou) { box.innerHTML = '<p class="tag t-er">' + esc(serial) + ' não está cadastrado.</p>'; msg('er', 'Serial não cadastrado', serial); return; }
+    msg('ok', serial, r.status);
+    const L = (k, v) => v ? '<tr><td class="muted">' + k + '</td><td>' + v + '</td></tr>' : '';
+    const v = r.venda, pd = r.pedido, b = r.bat;
+    box.innerHTML =
+      '<p><b class="mono">' + esc(r.serial) + '</b> <span class="tag ' + (TAGST[r.status] || 't-cz') + '">' + esc(r.status) + '</span><br>' + esc(r.desc || '') + ' <span class="muted">(' + esc(r.sku) + ')</span></p>' +
+      (b ? '<h4>Nascimento</h4><table>' + L('Batismo', esc(b.id) + ' · ' + esc(b.data) + ' · ' + esc(b.por)) + L('Faixa', esc(b.faixa)) + L('NF de entrada', esc(b.nfEnt)) + L('Lotes', esc(b.lotes)) + L('Estoque', esc(b.lanc)) + '</table>' : '') +
+      (v ? '<h4>Venda</h4><table>' + L('NF', esc(v.nf) + ' · ' + esc(v.loja) + ' · emitida ' + esc(v.emi) + (v.situacao === 'CANCELADA' ? ' <span class="tag t-er">CANCELADA</span>' : '')) +
+        L('Cliente', esc(v.cliente) + (v.cidade ? ' · ' + esc(v.cidade) : '')) + L('Canal', esc(v.canal)) + L('Pedido', esc(v.pedido) + (pd ? ' · ' + esc(pd.data) + ' · ' + esc(pd.situacao) + (pd.tipo ? ' · ' + esc(pd.tipo) : '') : '')) +
+        L('Vendedor', esc(v.vendedor)) + L('Envio ML', esc(v.envio)) + L('Itens da NF', v.itens.map(i => esc(pref(i.sku)) + ' × ' + fmtQ(i.qtd)).join(', ')) +
+        L('Chave', '<span class="mono">' + esc(r.chave) + '</span>') + '</table>'
+        : (r.status === ST.EXP ? '<p class="muted">Expedida na NF ' + esc(r.nf) + ' (sem dados da venda — NF adicionada antes do rastreio).</p>' : '')) +
+      '<h4>Linha do tempo</h4><ul class="l">' + (r.eventos.length ? r.eventos.map(e => '<li><span class="muted">' + esc(e.quando) + ' · ' + esc(e.quem) + '</span><br>' + (MODO_TXT[e.modo] || esc(e.modo)) + ' — ' + esc(e.res) + (e.lido && e.lido !== r.serial ? ' <span class="muted">(' + esc(e.lido) + ')</span>' : '') + '</li>').join('') : '<li class="muted">Nenhum registro.</li>') + '</ul>';
+  } catch (e) { box.innerHTML = '<p class="tag t-er">' + esc(e.message) + '</p>'; msg('er', 'Não foi possível rastrear', e.message); }
+}
+$('rastBtn').onclick = () => rastrear($('rastIn').value);
+$('rastIn').onkeydown = e => { if (e.key === 'Enter') rastrear($('rastIn').value); };
 
 // ================= LEITURA: câmera (contínuo ou toque) + teclado =================
 const visto = {};
