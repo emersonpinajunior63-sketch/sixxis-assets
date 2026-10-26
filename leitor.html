@@ -596,8 +596,9 @@ function baixarPlanilha(prefixo, de, ate) {
   if (!window.XLSX) return msg('er', 'Gerador de planilha não carregou (confira a internet)');
   const linhas = []; for (let i = de; i <= ate; i++) linhas.push([prefixo + '-' + String(i).padStart(6, '0')]);
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(linhas), 'Plan1');
-  // .xls (Excel 97, biff8): a datadora não abre .xlsx
-  XLSX.writeFile(wb, prefixo + '_' + String(de).padStart(6, '0') + '-' + String(ate).padStart(6, '0') + '.xls', { bookType: 'biff8' });
+  // .xls (Excel 97, biff8): a datadora não abre .xlsx. bookSST = textos na tabela compartilhada (LABELSST);
+  // sem isso a datadora abre o arquivo mas mostra a lista vazia (testado em 26/10/2026)
+  XLSX.writeFile(wb, prefixo + '_' + String(de).padStart(6, '0') + '-' + String(ate).padStart(6, '0') + '.xls', { bookType: 'biff8', bookSST: true });
 }
 $('bGerar').onclick = function () {
   const sku = $('bSku').value, qtd = Number($('bQtd').value);
