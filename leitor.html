@@ -642,8 +642,10 @@ function render() {
   }).join('');
 
   // inventário
-  const skus = Object.keys(S.mapa).sort((a, b) => pref(a).localeCompare(pref(b)));
-  if ($('iSku').options.length !== skus.length + 1) $('iSku').innerHTML = '<option value="">Todos os SKUs</option>' + skus.map(s => '<option value="' + esc(s) + '">' + esc(pref(s) + ' · ' + s) + '</option>').join('');
+  // lista de produtos em uma linha: "Descrição (SKU)", em ordem alfabética da descrição (SERIAL_MAPA, coluna C)
+  const nomeSku = s => ((S.mapa[s].desc || '').trim() || pref(s)) + ' (' + s + ')';
+  const skus = Object.keys(S.mapa).sort((a, b) => nomeSku(a).localeCompare(nomeSku(b), 'pt-BR'));
+  if ($('iSku').options.length !== skus.length + 1) $('iSku').innerHTML = '<option value="">Todos os SKUs</option>' + skus.map(s => '<option value="' + esc(s) + '">' + esc(nomeSku(s)) + '</option>').join('');
   const r = resultadoInv();
   $('iBip').textContent = r.bip.length; $('iOk').textContent = r.ok; $('iFalta').textContent = r.falt.length; $('iSobra').textContent = r.sobra.length;
   $('iIni').textContent = S.inv ? 'Contagem aberta' + (S.inv.ini ? ' em ' + S.inv.ini : '') + ' · fica salva até o faturista encerrar.' : 'Nenhuma contagem em andamento. Comece bipando.';
@@ -672,7 +674,7 @@ function render() {
 
   // batismo
   const bs = $('bSku').value;
-  const optB = '<option value="">Escolha o produto…</option>' + skus.map(s => '<option value="' + esc(s) + '">' + esc(pref(s) + ' · ' + s + ' · ' + S.mapa[s].desc) + '</option>').join('');
+  const optB = '<option value="">Escolha o produto…</option>' + skus.map(s => '<option value="' + esc(s) + '">' + esc(nomeSku(s)) + '</option>').join('');
   if ($('bSku').innerHTML !== optB) { $('bSku').innerHTML = optB; $('bSku').value = bs; }
   $('bLista').innerHTML = bats.length ? '<table><tr><th>Batismo</th><th>Faixa</th><th></th></tr>' + bats.slice(0, 40).map(b =>
     '<tr><td><b>' + esc(b.id) + '</b><div class="muted">' + esc(b.data + (b.nfEnt ? ' · NF ' + b.nfEnt : '') + (b.lotes ? ' · ' + b.lotes : '')) + '</div></td><td class="mono">' + esc(b.prefixo) + ' ' + b.de + '–' + b.ate + '<div class="muted">' + b.qtd + ' un. · ' + (pendB(b) ? pendB(b) + ' a conferir' : 'conferido') + '</div></td>' +
