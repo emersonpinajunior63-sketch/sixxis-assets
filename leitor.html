@@ -186,7 +186,7 @@
       <label class="f">Lotes / observação (opcional)</label>
       <input class="txt" id="bLotes" placeholder="Ex.: lotes A, B e C misturados">
       <div class="row"><button class="btn" id="bGerar">Batizar e baixar planilha</button></div>
-      <p class="muted">A planilha baixada tem uma coluna, sem cabeçalho, um serial por linha: é a que vai no pen drive da datadora.</p>
+      <p class="muted">Baixa um arquivo .xls (a datadora não abre .xlsx) com uma coluna, sem cabeçalho, um serial por linha. Copie para o pen drive e, na datadora, troque o arquivo da Planilha e do QR pelo novo.</p>
       <div id="bRes"></div>
     </div>
     <div class="card"><h3>Batismos</h3><div id="bLista"></div></div>
@@ -596,7 +596,8 @@ function baixarPlanilha(prefixo, de, ate) {
   if (!window.XLSX) return msg('er', 'Gerador de planilha não carregou (confira a internet)');
   const linhas = []; for (let i = de; i <= ate; i++) linhas.push([prefixo + '-' + String(i).padStart(6, '0')]);
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(linhas), 'Plan1');
-  XLSX.writeFile(wb, 'datadora_' + prefixo + '_' + String(de).padStart(6, '0') + '-' + String(ate).padStart(6, '0') + '.xlsx');
+  // .xls (Excel 97, biff8): a datadora não abre .xlsx
+  XLSX.writeFile(wb, prefixo + '_' + String(de).padStart(6, '0') + '-' + String(ate).padStart(6, '0') + '.xls', { bookType: 'biff8' });
 }
 $('bGerar').onclick = function () {
   const sku = $('bSku').value, qtd = Number($('bQtd').value);
