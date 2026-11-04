@@ -391,12 +391,21 @@ const completo = n => n.etq && progresso(n).every(p => p.feito >= p.qtd);
 const rotulo = n => 'NF ' + n.nf + ' · ' + n.loja;
 const LOJA_CNPJ = { '67094763000110': 'AR BRASIL', '48481625000149': 'SAO PAULO', '27390416000110': 'GOIANIA', '40573611000143': 'LONDRINA', '54978947000109': 'IMPORTAÇÃO', '05829419000174': 'MATRIZ BF' };
 let ABERTA = null, ULTIMAS = [];
+// Caixa bipada antes da etiqueta: fica guardada por ESPERA_MS e entra sozinha na próxima etiqueta/DANFE lida.
+const ESPERA_MS = 60000;
+let ESPERA = null;   // { serial, ate }
 function abrir(n) {
   const ant = ABERTA && S.rom.nfs[ABERTA];
   ABERTA = n.chave;
   if (!n.etq) enfileirar({ tipo: 'etiqueta', chave: n.chave });
   const cs = progresso(n).filter(x => x.serial);
-  if (completo(n)) return msg('ok', '✅ ' + rotulo(n) + ' conferida', cs.length ? 'Já estava completa' : 'Itens sem serial: conferidos pela nota');
+  const esp = ESPERA && Date.now() <= ESPERA.ate ? ESPERA.serial : null; ESPERA = null;
+  if (completo(n)) return msg(esp ? 'er' : 'ok', '✅ ' + rotulo(n) + ' conferida', esp ? 'Já estava completa: a caixa ' + esp + ' bipada antes NÃO entrou nela' : cs.length ? 'Já estava completa' : 'Itens sem serial: conferidos pela nota');
+  if (esp) {   // a caixa bipada antes entra agora nesta NF (mesmas checagens de sempre)
+    const u = S.un[esp], p = u && progresso(n).find(x => x.sku === u.sku);
+    if (!p) return msg('er', rotulo(n) + ' aberta — a caixa ' + esp + ' NÃO entrou', esp + ' é ' + (u ? u.sku : '?') + ' · a NF pede ' + n.itens.map(i => pref(i.sku)).join(', '));
+    return expedicao({ tipo: 'serial', v: esp });
+  }
   if (ant && ant.chave !== n.chave && !completo(ant)) return msg('av', rotulo(n) + ' aberta — a NF ' + ant.nf + ' ficou incompleta', 'Agora bipe o produto');
   msg('ok', rotulo(n), 'Agora bipe: ' + cs.map(x => pref(x.sku) + ' × ' + fmtQ(x.qtd)).join(', '));
 }
@@ -415,9 +424,13 @@ function expedicao(c) {
   if (!u) return msg('er', 'Serial não cadastrado', c.v + ' — se o batismo é novo, aguarde a tela atualizar');
   const n = ABERTA && S.rom.nfs[ABERTA];
   if (!n || n.canc || completo(n)) {
+    if (u.s === ST.EXP) return msg('er', 'Caixa já expedida', c.v + ' · NF ' + u.nf);
+    if (u.s === ST.BAT) return msg('er', 'Caixa não conferida na entrada', c.v + ' — está como BATIZADA');
+    if (u.s === ST.NL) return msg('er', 'Caixa marcada como não localizada', 'Dê entrada nela de novo antes de expedir');
     const pend = nfsRom().filter(x => !completo(x) && progresso(x).some(p => p.serial && p.sku === u.sku && p.feito < p.qtd));
     if (!pend.length) return msg('er', 'Produto órfão', 'Nenhuma NF pendente do romaneio pede ' + pref(u.sku) + ' (' + u.sku + ')');
-    return msg('er', 'Bipe primeiro a etiqueta ou a DANFE', pend.length + ' NF(s) pendente(s) pedem este produto: ' + pend.slice(0, 4).map(x => x.nf).join(', ') + (pend.length > 4 ? '…' : ''));
+    ESPERA = { serial: c.v, ate: Date.now() + ESPERA_MS };
+    return msg('av', 'Caixa ' + c.v + ' lida — agora bipe a etiqueta dela', 'Ou a DANFE. A caixa entra sozinha na NF (vale por 1 minuto).');
   }
   if (u.s === ST.EXP) return u.chave === n.chave ? msg('av', 'Esta caixa já está nesta NF', c.v) : msg('er', 'Caixa já expedida em outra NF', c.v + ' · NF ' + u.nf);
   if (u.s === ST.BAT) return msg('er', 'Caixa não conferida na entrada', c.v + ' — está como BATIZADA');
@@ -512,9 +525,10 @@ async function vinculosDoPdf(bytes) {   // por página: envio do ML ("483302 928
   if (!window.pdfjsLib) throw new Error('Leitor de PDF não carregou (confira a internet)');
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   const doc = await pdfjsLib.getDocument({ data: bytes }).promise, pares = [];
-  let ultimo = null;
+  let ultimo = null, comTexto = 0;
   for (let i = 1; i <= doc.numPages; i++) {
     const tc = await (await doc.getPage(i)).getTextContent();
+    if (tc.items.some(x => /\d/.test(x.str))) comTexto++;
     const txt = tc.items.map(x => x.str).join(' ').replace(/\s+/g, ' '), tok = txt.split(' ');
     let envio = null;
     for (let j = 0; j + 1 < tok.length; j++) if (/^\d{6}$/.test(tok[j]) && /^\d{5}$/.test(tok[j + 1])) { envio = tok[j] + tok[j + 1]; break; }
@@ -522,6 +536,7 @@ async function vinculosDoPdf(bytes) {   // por página: envio do ML ("483302 928
     if (envio) ultimo = envio;
     if (chave && (envio || ultimo)) pares.push({ envio: envio || ultimo, chave });
   }
+  pares.semTexto = comTexto === 0;   // PDF "impresso em PDF" (Microsoft Print to PDF etc.): virou imagem, não dá para ligar nada
   return pares;
 }
 $('rAdd').onclick = () => $('rArq').click();
@@ -530,14 +545,20 @@ $('rArq').onchange = async function () {
   msg('', 'Lendo os arquivos…');
   try {
     const a = await arquivos(files), nfs = [], canc = [];
-    let vinc = [], ign = 0;
-    for (const b of a.pdfs) vinc = vinc.concat(await vinculosDoPdf(b));
+    let vinc = [], ign = 0, pdfImagem = 0;
+    for (const b of a.pdfs) { const pr = await vinculosDoPdf(b); if (pr.semTexto) pdfImagem++; vinc = vinc.concat(pr); }
     a.xmls.forEach(t => { const x = lerXml(t); if (x.tipo === 'nfe') nfs.push(x.nf); else if (x.tipo === 'cancelamento') canc.push(x.chave); else ign++; });
     msg('', 'Enviando ' + nfs.length + ' NF(s) para a planilha…');
     const r = await api('lote', { nfs, canc, vinc });
     await carregar(true);
-    msg(r.add || r.lig || r.canc ? 'ok' : 'av', r.add ? 'Lote ' + r.lote + ': ' + r.add + ' NF(s) no romaneio' : 'Nenhuma NF nova',
-      [r.dup ? r.dup + ' já estavam' : '', ign ? ign + ' XML(s) ignorado(s) (entrada, não autorizada ou outro tipo)' : '', r.canc ? r.canc + ' cancelada(s)' : '', r.lig ? r.lig + ' etiqueta(s) ML ligada(s)' : ''].filter(Boolean).join(' · '));
+    // NF do Mercado Livre deste lote que continua sem etiqueta ligada (esqueceu o PDF, ou o PDF não era o original)
+    const mlSem = nfs.filter(n => n.canal === 'Mercado Livre' && S.rom.nfs[n.chave] && !S.rom.nfs[n.chave].envio && !S.rom.nfs[n.chave].canc);
+    const avisos = [];
+    if (pdfImagem) avisos.push('⚠ ' + (pdfImagem > 1 ? pdfImagem + ' PDFs não têm' : 'O PDF não tem') + ' texto (foi impresso como imagem): use o arquivo original do Etiqueta Casada');
+    if (mlSem.length) avisos.push('⚠ ' + mlSem.length + ' NF(s) do Mercado Livre sem etiqueta ligada (' + mlSem.slice(0, 5).map(n => n.nf).join(', ') + (mlSem.length > 5 ? '…' : '') + '): adicione o PDF da etiqueta casada');
+    const tit = r.add ? 'Lote ' + r.lote + ': ' + r.add + ' NF(s) no romaneio' : 'Nenhuma NF nova';
+    msg(avisos.length ? 'av' : r.add || r.lig || r.canc ? 'ok' : 'av', tit,
+      avisos.concat([r.dup ? r.dup + ' já estavam' : '', ign ? ign + ' XML(s) ignorado(s) (entrada, não autorizada ou outro tipo)' : '', r.canc ? r.canc + ' cancelada(s)' : '', r.lig ? r.lig + ' etiqueta(s) ML ligada(s)' : '']).filter(Boolean).join(' · '));
   } catch (e) { msg('er', 'Não consegui adicionar o lote', e.message); }
 };
 
@@ -794,8 +815,14 @@ $('bCam').onclick = () => {
   if (ligada) { scanner.stop().then(() => { ligada = false; $('bCam').textContent = 'Ligar câmera'; render(); }).catch(() => {}); return; }
   if (!window.Html5Qrcode) return msg('er', 'Biblioteca da câmera não carregou', 'Confira a internet');
   const F = Html5QrcodeSupportedFormats;
-  scanner = scanner || new Html5Qrcode('reader', { formatsToSupport: [F.QR_CODE, F.CODE_128], verbose: false });
-  scanner.start({ facingMode: 'environment' }, { fps: 12, qrbox: (w, h) => { const s = Math.floor(Math.min(w, h) * .85); return { width: s, height: Math.floor(s * .6) }; } }, lidoCamera, () => {})
+  // useBarCodeDetectorIfSupported: no Chrome do Android usa o leitor nativo do sistema, bem melhor com o código de barras
+  // longo da chave (44 dígitos) do que o decodificador em JavaScript. Resolução maior = barras mais nítidas.
+  scanner = scanner || new Html5Qrcode('reader', { formatsToSupport: [F.QR_CODE, F.CODE_128], verbose: false, experimentalFeatures: { useBarCodeDetectorIfSupported: true } });
+  scanner.start({ facingMode: 'environment' }, {
+    fps: 12,
+    qrbox: (w, h) => { const lw = Math.floor(w * .92); return { width: lw, height: Math.max(120, Math.min(Math.floor(h * .7), Math.floor(lw * .6))) }; },
+    videoConstraints: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 }, advanced: [{ focusMode: 'continuous' }] }
+  }, lidoCamera, () => {})
     .then(() => { ligada = true; $('bCam').textContent = 'Desligar câmera'; render(); })
     .catch(e => msg('er', 'Não abriu a câmera', String(e)));
 };
