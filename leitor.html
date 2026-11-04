@@ -139,7 +139,7 @@
       <div class="stat">
         <div><b id="iBip">0</b>bipadas</div>
         <div class="s-ok"><b id="iOk">0</b>batem</div>
-        <div class="s-er"><b id="iFalta">0</b>faltando</div>
+        <div class="s-er" id="iFaltaBox"><b id="iFalta">0</b><span id="iFaltaTxt">faltando</span></div>
         <div class="s-av"><b id="iSobra">0</b>sobrando</div>
       </div>
       <p class="muted">A contagem fica salva na planilha, em todos os aparelhos. Esqueceu alguma? Vá até ela e bipe: o resultado se atualiza.</p>
@@ -609,6 +609,11 @@ function resultadoInv() {
 $('iDesfazer').onclick = () => { const s = S.inv && S.inv.ord[S.inv.ord.length - 1]; if (!s) return msg('av', 'Nada para desfazer'); enfileirar({ tipo: 'desfazerInv', serial: s }); render(); msg('av', 'Retirada da contagem: ' + s); };
 $('iVer').onclick = () => {
   const r = resultadoInv(), box = $('iResumo'); box.classList.remove('hidden');
+  if (!S.inv) {
+    box.innerHTML = '<h3>Listas do inventário</h3><p>Nenhuma contagem aberta. O sistema tem <b>' + r.falt.length + '</b> caixa(s) EM ESTOQUE' +
+      ($('iSku').value ? ' deste produto' : '') + '. Elas só passam a contar como faltando depois que a contagem começar (primeira caixa bipada).</p>';
+    return;
+  }
   box.innerHTML = '<h3>Listas do inventário</h3>' +
     (r.falt.length ? '<p class="muted">Faltando — o sistema diz EM ESTOQUE e ainda não foram bipadas</p><ul class="l">' + r.falt.sort().map(s => '<li class="mono">' + s + '</li>').join('') + '</ul>' : '<p>✅ Nada faltando.</p>') +
     (r.sobra.length ? '<p class="muted">Sobrando — bipadas no depósito, mas o sistema diz outra coisa</p><ul class="l">' + r.sobra.map(s => '<li><span class="mono">' + s + '</span> — ' + S.un[s].s + (S.un[s].nf ? ' NF ' + S.un[s].nf : '') + '</li>').join('') + '</ul>' : '');
@@ -757,6 +762,9 @@ function render() {
   if ($('iSku').options.length !== skus.length + 1) $('iSku').innerHTML = '<option value="">Todos os SKUs</option>' + skus.map(s => '<option value="' + esc(s) + '">' + esc(nomeSku(s)) + '</option>').join('');
   const r = resultadoInv();
   $('iBip').textContent = r.bip.length; $('iOk').textContent = r.ok; $('iFalta').textContent = r.falt.length; $('iSobra').textContent = r.sobra.length;
+  // Sem contagem aberta nada está "faltando": o número é só quanto o sistema tem EM ESTOQUE, a conferir (04/11/2026)
+  $('iFaltaBox').className = S.inv ? 's-er' : '';
+  $('iFaltaTxt').textContent = S.inv ? 'faltando' : 'no estoque · a conferir';
   $('iIni').textContent = S.inv ? 'Contagem aberta' + (S.inv.ini ? ' em ' + S.inv.ini : '') + ' · fica salva até o faturista encerrar.' : 'Nenhuma contagem em andamento. Comece bipando.';
 
   // entrada
