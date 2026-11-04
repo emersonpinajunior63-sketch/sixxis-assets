@@ -5,10 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <meta name="theme-color" content="#1f2a37">
 <title>Leitor Sixxis</title>
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="manifest" href="leitor.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="leitor-icone-192.png">
+<link rel="apple-touch-icon" href="leitor-icone-180.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Leitor">
+<link rel="preconnect" href="https://script.google.com">
+<link rel="preconnect" href="https://script.googleusercontent.com">
+<!-- As bibliotecas (câmera, .zip, PDF, planilha) carregam só quando são usadas: a página abre sem esperar por elas. -->
 <style>
   :root { --ok:#2e7d32; --av:#f9a825; --er:#c62828; --az:#1f6feb; --cz:#eceff3; --tx:#1d2329; --esc:#1f2a37; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -210,6 +214,25 @@ const TITULOS = { menu: 'Leitor Sixxis', expedicao: 'Expedição', inventario: '
 const ST = { BAT: 'BATIZADA', EST: 'EM ESTOQUE', EXP: 'EXPEDIDA', NL: 'NÃO LOCALIZADA' };
 
 const $ = id => document.getElementById(id);
+// ---------- bibliotecas sob demanda ----------
+const LIBS = {
+  Html5Qrcode: 'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js',
+  JSZip: 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',
+  pdfjsLib: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+  XLSX: 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
+};
+const LIB_NOME = { Html5Qrcode: 'da câmera', JSZip: 'de .zip', pdfjsLib: 'de PDF', XLSX: 'de planilha' };
+const _libs = {};
+function lib(g) {
+  if (window[g]) return Promise.resolve();
+  return _libs[g] = _libs[g] || new Promise((ok, falha) => {
+    const sc = document.createElement('script'); sc.src = LIBS[g]; sc.async = true;
+    sc.onload = () => window[g] ? ok() : falha(new Error('Biblioteca ' + LIB_NOME[g] + ' não carregou'));
+    sc.onerror = () => { delete _libs[g]; sc.remove(); falha(new Error('Biblioteca ' + LIB_NOME[g] + ' não carregou (confira a internet)')); };
+    document.head.appendChild(sc);
+  });
+}
+const preLib = g => lib(g).catch(() => {});
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmtQ = n => Number.isInteger(n) ? String(n) : String(n).replace('.', ',');
 const p2 = n => (n < 10 ? '0' : '') + n;
@@ -261,13 +284,13 @@ async function carregar(forcar) {
   if (carregando) return; carregando = true;
   try {
     const r = await api('estado', { ver: forcar || !S ? '' : S.ver });
-    if (!r.mesmo) { S = normalizar(r); FILA.forEach(aplicar); ls.set('ldr_ultimo', r); render(); }
-    online(true);
+    if (!r.mesmo) { S = normalizar(r); FILA.forEach(aplicar); ls.set('ldr_ultimo', r); ls.set('ldr_ultimo_k', K); render(); }
+    atualizando = false; online(true);
   } catch (e) {
     if (e.semAcesso) return semAcesso(e.message);
     online(false);
     if (!S) { const c = ls.get('ldr_ultimo', null); if (c) { S = normalizar(c); FILA.forEach(aplicar); render(); } else $('inicioTxt').textContent = 'Sem conexão com a planilha: ' + e.message; }
-  } finally { carregando = false; }
+  } finally { carregando = false; if (atualizando) { atualizando = false; syncTxt(); } }
 }
 let enviando = false, timerEnvio = null;
 function enfileirar(ev) {
@@ -298,11 +321,12 @@ async function enviar() {
     if (FILA.length) { clearTimeout(timerEnvio); timerEnvio = setTimeout(enviar, navigator.onLine === false ? 8000 : 2500); }
   }
 }
-let estaOnline = true;
+let estaOnline = true, atualizando = false;
 function online(v) { estaOnline = v; syncTxt(); }
 function syncTxt() {
   const el = $('sync'); if (!el) return;
-  if (!estaOnline) { el.className = 'off'; el.textContent = '⚠ sem conexão' + (FILA.length ? ' · ' + FILA.length + ' pendente(s)' : ''); }
+  if (atualizando) { el.className = 'pend'; el.textContent = '⏳ atualizando…'; }
+  else if (!estaOnline) { el.className = 'off'; el.textContent = '⚠ sem conexão' + (FILA.length ? ' · ' + FILA.length + ' pendente(s)' : ''); }
   else if (FILA.length) { el.className = 'pend'; el.textContent = '⏳ ' + FILA.length + ' enviando'; }
   else { el.className = ''; el.textContent = '✓ salvo na planilha'; }
 }
@@ -360,6 +384,7 @@ function ir(t) {
   $('hTit').textContent = TITULOS[t];
   if (t !== 'menu') msg('', 'Pronto.', { entrada: 'Bipe as caixas do batismo.', expedicao: 'Bipe a etiqueta (ou a DANFE) e depois o produto.', inventario: 'Bipe as caixas do depósito.', situacao: 'Bipe uma caixa para ver a história dela.' }[t] || '');
   window.scrollTo(0, 0);
+  if (t === 'batismo') preLib('XLSX');
   render();
 }
 const podeTela = t => t === 'batismo' ? faturista() : pode(t);
@@ -508,7 +533,7 @@ async function arquivos(files) {
   for (const f of files) {
     const ini = new Uint8Array(await f.slice(0, 4).arrayBuffer());
     if (ini[0] === 0x50 && ini[1] === 0x4B) {
-      if (!window.JSZip) throw new Error('Leitor de .zip não carregou (confira a internet)');
+      await lib('JSZip');
       const z = await JSZip.loadAsync(f);
       for (const nome of Object.keys(z.files)) {
         if (z.files[nome].dir) continue;
@@ -522,7 +547,7 @@ async function arquivos(files) {
   return { xmls, pdfs };
 }
 async function vinculosDoPdf(bytes) {   // por página: envio do ML ("483302 92832") + chave do DANFE; página de pack sem envio herda o anterior
-  if (!window.pdfjsLib) throw new Error('Leitor de PDF não carregou (confira a internet)');
+  await lib('pdfjsLib');
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   const doc = await pdfjsLib.getDocument({ data: bytes }).promise, pares = [];
   let ultimo = null, comTexto = 0;
@@ -539,7 +564,7 @@ async function vinculosDoPdf(bytes) {   // por página: envio do ML ("483302 928
   pares.semTexto = comTexto === 0;   // PDF "impresso em PDF" (Microsoft Print to PDF etc.): virou imagem, não dá para ligar nada
   return pares;
 }
-$('rAdd').onclick = () => $('rArq').click();
+$('rAdd').onclick = () => { preLib('JSZip'); preLib('pdfjsLib'); $('rArq').click(); };
 $('rArq').onchange = async function () {
   const files = Array.from(this.files || []); this.value = ''; if (!files.length) return;
   msg('', 'Lendo os arquivos…');
@@ -672,8 +697,8 @@ async function lancPrevia(b, tipo) {
 }
 
 // ================= BATISMO (faturista) =================
-function baixarPlanilha(prefixo, de, ate) {
-  if (!window.XLSX) return msg('er', 'Gerador de planilha não carregou (confira a internet)');
+async function baixarPlanilha(prefixo, de, ate) {
+  try { await lib('XLSX'); } catch (e) { return msg('er', 'Gerador de planilha não carregou', 'Confira a internet e baixe de novo pelo botão Planilha do batismo'); }
   const linhas = []; for (let i = de; i <= ate; i++) linhas.push([prefixo + '-' + String(i).padStart(6, '0')]);
   // Trava de fim de lote: a datadora volta para a 1ª linha depois da última (testado 26/10/2026).
   // Estas linhas aparecem na tela dela no lugar do próximo número; impressas por engano, não são serial (o leitor recusa).
@@ -690,7 +715,7 @@ $('bGerar').onclick = function () {
     $('bRes').innerHTML = '<p class="muted">Reservando os seriais na planilha…</p>';
     try {
       const r = await api('batismo', { sku: sku, qtd: qtd, nfEnt: $('bNf').value, lotes: $('bLotes').value });
-      baixarPlanilha(r.prefixo, r.de, r.ate);
+      await baixarPlanilha(r.prefixo, r.de, r.ate);
       $('bRes').innerHTML = '<div class="aviso"><b>' + esc(r.id) + '</b>: ' + r.seriais.length + ' seriais, <span class="mono">' + esc(r.seriais[0]) + '</span> a <span class="mono">' + esc(r.seriais[r.seriais.length - 1]) + '</span>. A planilha foi baixada.</div>';
       $('bQtd').value = ''; $('bNf').value = ''; $('bLotes').value = '';
       await carregar(true);
@@ -812,10 +837,10 @@ function lidoCamera(t) {
 $('gat').onclick = () => { armadoAte = Date.now() + 2000; $('gat').classList.add('armado'); setTimeout(() => { if (Date.now() > armadoAte) $('gat').classList.remove('armado'); }, 2100); };
 document.querySelectorAll('[data-lt]').forEach(b => b.onclick = () => { CFG.leitura = b.dataset.lt; ls.set('ldr_cfg', CFG); render(); });
 let scanner = null, ligada = false;
-$('bCam').onclick = () => {
+$('bCam').onclick = async () => {
   try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
   if (ligada) { scanner.stop().then(() => { ligada = false; $('bCam').textContent = 'Ligar câmera'; render(); }).catch(() => {}); return; }
-  if (!window.Html5Qrcode) return msg('er', 'Biblioteca da câmera não carregou', 'Confira a internet');
+  if (!window.Html5Qrcode) { $('bCam').textContent = 'Abrindo…'; try { await lib('Html5Qrcode'); } catch (e) { $('bCam').textContent = 'Ligar câmera'; return msg('er', 'Biblioteca da câmera não carregou', 'Confira a internet'); } }
   const F = Html5QrcodeSupportedFormats;
   // useBarCodeDetectorIfSupported: no Chrome do Android usa o leitor nativo do sistema, bem melhor com o código de barras
   // longo da chave (44 dígitos) do que o decodificador em JavaScript. Resolução maior = barras mais nítidas.
@@ -834,8 +859,13 @@ $('manual').addEventListener('keydown', function (e) { if (e.key === 'Enter') { 
 (async function () {
   if (!API_URL || API_URL.indexOf('http') !== 0) { $('inicioTxt').textContent = 'Esta página ainda não tem o endereço do servidor configurado.'; return; }
   if (!K) { $('inicioTxt').innerHTML = '<b>Abra pelo seu link pessoal do leitor.</b><br>Peça o link ao responsável.'; return; }
+  const cache = ls.get('ldr_ultimo_k', '') === K ? ls.get('ldr_ultimo', null) : null;
+  if (cache) {   // abre na hora com o que este aparelho já tinha; a planilha atualiza a tela em seguida
+    try { S = normalizar(cache); FILA.forEach(aplicar); atualizando = true; ir('menu'); } catch (e) { S = null; atualizando = false; }
+  }
+  setTimeout(() => preLib('Html5Qrcode'), 800);   // a câmera fica pronta antes de alguém tocar em "Ligar câmera"
   await carregar(true);
-  if (S) ir('menu');
+  if (S && TELA === 'menu' && $('t-menu').classList.contains('hidden')) ir('menu');
   if (FILA.length) enviar();
 })();
 </script>
