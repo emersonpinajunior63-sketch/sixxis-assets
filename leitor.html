@@ -657,7 +657,9 @@ async function lancPrevia(b, tipo) {
     const sinal = n => (n > 0 ? '+' : '') + n;
     let txt;
     if (tipo === 'chegada') txt = '<p>Vai lançar <b>Chegada ' + sinal(r.lanca) + '</b> de ' + esc(r.desc || r.sku) + ' (' + esc(r.sku) + ').</p><p class="muted">' + r.conf + ' conferida(s) de ' + r.qtd + ' batizada(s)' + (r.nl ? ' · ' + r.nl + ' não localizada(s) ficam fora' : '') + '. Saldo loja hoje: ' + r.saldoLoja + ' → passa a ' + (r.saldoLoja + r.lanca) + '.</p>';
-    else txt = '<table><tr><td class="muted">Contadas no batismo</td><td><b>' + r.conf + '</b></td></tr><tr><td class="muted">Saldo loja na planilha</td><td>' + r.saldoLoja + '</td></tr>' +
+    else txt = '<table><tr><td class="muted">Contadas no batismo</td><td>' + r.conf + '</td></tr>' +
+      (r.exp ? '<tr><td class="muted">Já expedidas durante a contagem</td><td>− ' + r.exp + '</td></tr>' : '') +
+      '<tr><td class="muted">No barracão agora</td><td><b>' + (r.noBarracao != null ? r.noBarracao : r.conf) + '</b></td></tr><tr><td class="muted">Saldo loja na planilha</td><td>' + r.saldoLoja + '</td></tr>' +
       (r.pendRom ? '<tr><td class="muted">Vendidas aguardando expedição</td><td>+ ' + r.pendRom + '</td></tr>' : '') + '<tr><td class="muted">Esperado no barracão</td><td>' + r.esperado + '</td></tr></table>' +
       (r.dif === 0 ? '<p>✅ <b>Bateu.</b> Nada é lançado; o batismo fica marcado como conferido com o estoque.</p>' : '<p>Diferença <b>' + sinal(r.dif) + '</b>: vai lançar um <b>Ajuste ' + sinal(r.dif) + '</b> na ENTRADAS_LOG.</p>');
     box.innerHTML = '<h3>' + (tipo === 'chegada' ? 'Mercadoria nova' : 'Recontagem') + ' · ' + esc(b.id) + '</h3>' + txt +
