@@ -64,6 +64,8 @@
   .tag { display: inline-block; border-radius: 4px; padding: 1px 6px; font-size: 11px; font-weight: 600; }
   .t-ok { background: #e3f3e5; color: var(--ok); } .t-av { background: #fff4d6; color: #8a6200; } .t-er { background: #fde4e4; color: var(--er); } .t-cz { background: var(--cz); color: #5b6470; }
   .mono { font-family: ui-monospace, monospace; font-size: 12.5px; word-break: break-all; }
+  .ped { font-size: 12.5px; font-weight: 600; color: var(--esc); margin-top: 2px; } .ped.esp { font-weight: 400; color: #8a6200; }
+  .sers { font-family: ui-monospace, monospace; font-size: 12px; color: var(--ok); font-weight: 600; margin-top: 2px; }
   .muted { color: #6b7480; font-size: 13px; }
   ul.l { list-style: none; padding: 0; margin: 0; }
   ul.l li { padding: 6px 0; border-bottom: 1px solid #eef0f3; font-size: 13.5px; }
@@ -747,11 +749,18 @@ function render() {
   const todas = S.rom.ordem.map(k => S.rom.nfs[k]);
   $('rVazio').textContent = faturista() ? 'Romaneio vazio. Toque em “Adicionar lote” e escolha os XMLs do Bling e o PDF da etiqueta casada.' : 'Romaneio vazio. Aguarde o faturista adicionar as NFs do dia.';
   $('rVazio').classList.toggle('hidden', todas.length > 0);
+  // caixas bipadas em cada NF do romaneio: chave → SKU → [seriais] (06/11/2026)
+  const cxNF = {};
+  Object.keys(S.un).forEach(s => { const u = S.un[s]; if (u.s !== ST.EXP || !u.chave || !S.rom.nfs[u.chave]) return;
+    const k = cxNF[u.chave] = cxNF[u.chave] || {}; (k[u.sku] = k[u.sku] || []).push(s); });
+  // nº do pedido no Bling (vem da planilha: Ref. Pedido do XML ou, no marketplace, a aba PEDIDOS_LOJA)
+  const pedTxt = n => n.ped ? '<div class="ped">Ped. ' + esc(n.ped) + '</div>' : n.pedLoja ? '<div class="ped esp" title="Pedido ' + esc(n.pedLoja) + ' na loja">Ped. aguardando</div>' : '';
   $('rLin').innerHTML = todas.map(n => {
-    if (n.canc) return '<tr class="canc"><td><b>' + esc(n.nf) + '</b><div>' + esc(n.loja) + '</div></td><td colspan="3"><b>CANCELADA</b> — não expedir</td></tr>';
-    const p = progresso(n), done = completo(n), ab = ABERTA === n.chave && !done;
-    return '<tr class="' + (done ? 'feita' : ab ? 'aberta' : '') + '"><td><b>' + esc(n.nf) + '</b><div class="muted">' + esc(n.loja) + '</div><span class="tag t-cz">' + (n.envio ? 'ML' : 'DANFE') + '</span></td>' +
-      '<td>' + p.map(x => '<div><b>' + esc(x.serial ? pref(x.sku) : x.sku) + '</b> × ' + fmtQ(x.qtd) + (x.serial ? '' : ' <span class="tag t-av">pela NF</span>') + '</div>').join('') + '</td>' +
+    if (n.canc) return '<tr class="canc"><td><b>' + esc(n.nf) + '</b><div>' + esc(n.loja) + '</div>' + pedTxt(n) + '</td><td colspan="3"><b>CANCELADA</b> — não expedir</td></tr>';
+    const p = progresso(n), done = completo(n), ab = ABERTA === n.chave && !done, bx = cxNF[n.chave] || {};
+    return '<tr class="' + (done ? 'feita' : ab ? 'aberta' : '') + '"><td><b>' + esc(n.nf) + '</b><div class="muted">' + esc(n.loja) + '</div>' + pedTxt(n) + '<span class="tag t-cz">' + (n.envio ? 'ML' : 'DANFE') + '</span></td>' +
+      '<td>' + p.map(x => '<div><b>' + esc(x.serial ? pref(x.sku) : x.sku) + '</b> × ' + fmtQ(x.qtd) + (x.serial ? '' : ' <span class="tag t-av">pela NF</span>') +
+        (x.serial && bx[x.sku] ? bx[x.sku].sort().map(s => '<div class="sers">' + esc(s) + '</div>').join('') : '') + '</div>').join('') + '</td>' +
       '<td class="ck">' + (n.etq ? '✅' : '⬜') + '</td><td class="ck">' + (done ? '✅' : p.some(x => x.serial && x.feito) ? p.filter(x => x.serial).map(x => x.feito + '/' + fmtQ(x.qtd)).join(' ') : '⬜') + '</td></tr>';
   }).join('');
 
@@ -822,7 +831,8 @@ async function rastrear(serial) {
       '<p><b class="mono">' + esc(r.serial) + '</b> <span class="tag ' + (TAGST[r.status] || 't-cz') + '">' + esc(r.status) + '</span><br>' + esc(r.desc || '') + ' <span class="muted">(' + esc(r.sku) + ')</span></p>' +
       (b ? '<h4>Nascimento</h4><table>' + L('Batismo', esc(b.id) + ' · ' + esc(b.data) + ' · ' + esc(b.por)) + L('Faixa', esc(b.faixa)) + L('NF de entrada', esc(b.nfEnt)) + L('Lotes', esc(b.lotes)) + L('Estoque', esc(b.lanc)) + '</table>' : '') +
       (v ? '<h4>Venda</h4><table>' + L('NF', esc(v.nf) + ' · ' + esc(v.loja) + ' · emitida ' + esc(v.emi) + (v.situacao === 'CANCELADA' ? ' <span class="tag t-er">CANCELADA</span>' : '')) +
-        L('Cliente', esc(v.cliente) + (v.cidade ? ' · ' + esc(v.cidade) : '')) + L('Canal', esc(v.canal)) + L('Pedido', esc(v.pedido) + (pd ? ' · ' + esc(pd.data) + ' · ' + esc(pd.situacao) + (pd.tipo ? ' · ' + esc(pd.tipo) : '') : '')) +
+        L('Cliente', esc(v.cliente) + (v.cidade ? ' · ' + esc(v.cidade) : '')) + L('Canal', esc(v.canal)) + L('Pedido', (v.pedBling ? '<b>' + esc(v.pedBling) + '</b>' : esc(v.pedido)) + (pd ? ' · ' + esc(pd.data) + ' · ' + esc(pd.situacao) + (pd.tipo ? ' · ' + esc(pd.tipo) : '') : '')) +
+        L('Pedido na loja', v.pedBling && /loja\s*\d+/i.test(v.pedido) ? '<span class="mono">' + esc((v.pedido.match(/loja\s*(\d+)/i) || [])[1]) + '</span>' : '') +
         L('Vendedor', esc(v.vendedor)) + L('Envio ML', esc(v.envio)) + L('Itens da NF', v.itens.map(i => esc(pref(i.sku)) + ' × ' + fmtQ(i.qtd)).join(', ')) +
         L('Chave', '<span class="mono">' + esc(r.chave) + '</span>') + '</table>'
         : (r.status === ST.EXP ? '<p class="muted">Expedida na NF ' + esc(r.nf) + ' (sem dados da venda — NF adicionada antes do rastreio).</p>' : '')) +
