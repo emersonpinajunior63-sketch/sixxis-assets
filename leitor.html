@@ -75,6 +75,11 @@
   .stat b { display: block; font-size: 22px; }
   .stat .s-ok b { color: var(--ok); } .stat .s-er b { color: var(--er); } .stat .s-av b { color: #a87400; }
   .aviso { background: #fff4d6; border-radius: 10px; padding: 12px; margin: 10px 0; font-size: 14px; }
+  /* chegada em montagem (10/11/2026) */
+  .mt { border: 1px solid #e3e7ec; border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
+  .mt .bar { height: 8px; border-radius: 4px; background: #e9edf1; overflow: hidden; margin: 6px 0 4px; }
+  .mt .bar i { display: block; height: 100%; background: var(--ok); border-radius: 4px; }
+  .mt .dias { font-size: 12px; color: #5b6470; }
   .carregando { text-align: center; padding: 40px 10px; color: #6b7480; }
 </style>
 </head>
@@ -190,9 +195,33 @@
   <!-- BATISMO -->
   <section id="t-batismo" class="hidden">
     <div class="card">
+      <h3>Chegadas em montagem</h3>
+      <p class="muted">Produto que chega desmontado: registre a chegada e batize só o que for sendo montado. Cada caixa bipada na Entrada já soma +1 no estoque da planilha.</p>
+      <div id="mLista"></div>
+      <div class="row"><button class="btn claro" id="mNovaBtn">+ Registrar chegada em montagem</button></div>
+      <div id="mNova" class="hidden">
+        <label class="f">Produto</label>
+        <select id="mSku"></select>
+        <label class="f">Quantidade que chegou</label>
+        <input class="txt" id="mQtd" type="number" min="1" max="5000" inputmode="numeric" placeholder="Ex.: 80">
+        <label class="f">Lote</label>
+        <input class="txt" id="mLote" placeholder="Ex.: PI2026604">
+        <label class="f">NF de entrada (opcional)</label>
+        <input class="txt" id="mNf" placeholder="Ex.: 1234">
+        <label class="f">Data da chegada</label>
+        <input class="txt" id="mData" type="date">
+        <div class="row"><button class="btn claro" id="mCancelar">Cancelar</button><button class="btn" id="mSalvar">Registrar chegada</button></div>
+      </div>
+      <div id="mRes"></div>
+    </div>
+    <div class="card">
       <h3>Novo batismo</h3>
       <label class="f">Produto</label>
       <select id="bSku"></select>
+      <div id="bMontBox" class="hidden">
+        <label class="f">Chegada em montagem</label>
+        <select id="bMont"></select>
+      </div>
       <label class="f">Quantidade de caixas</label>
       <input class="txt" id="bQtd" type="number" min="1" max="3000" inputmode="numeric" placeholder="Ex.: 500">
       <label class="f">NF de entrada (opcional)</label>
@@ -263,7 +292,7 @@ let S = null;
 let FILA = ls.get('ldr_fila', []);
 const salvarFila = () => ls.set('ldr_fila', FILA);
 function normalizar(r) {
-  const s = { ver: r.ver, quem: r.quem, mapa: {}, porPref: {}, bat: r.bat || [], un: {}, log: r.log || [] };
+  const s = { ver: r.ver, quem: r.quem, mapa: {}, porPref: {}, bat: r.bat || [], un: {}, log: r.log || [], mont: r.mont || [] };
   (r.mapa || []).forEach(m => { s.mapa[m[0]] = { prefixo: m[1], desc: m[2] }; s.porPref[m[1]] = m[0]; });
   (r.un || []).forEach(u => { s.un[u[0]] = { sku: u[1], n: u[2], b: u[3], s: u[4], nf: u[5], chave: u[6] }; });
   s.rom = { id: r.rom.id, lotes: r.rom.lotes || [], nfs: {}, ordem: [], envio: {} };
@@ -640,8 +669,10 @@ function entrada(c) {
   if (u.sku !== b.sku) return msg('er', 'Caixa de outro produto', c.v + ' é ' + u.sku + ', o batismo é ' + b.sku);
   if (u.s === ST.EST) return msg('av', 'Já conferida', c.v);
   if (u.s === ST.EXP) return msg('er', 'Esta caixa já foi expedida', c.v + ' · NF ' + u.nf);
+  const bU = S.bat.find(x => x.id === u.b), novaMont = bU && bU.mont && (u.s === ST.BAT || u.s === ST.NL);
   enfileirar({ tipo: 'entrada', serial: c.v, batismo: b.id, skuBatismo: b.sku });
-  if (u.b !== b.id) return msg('av', 'Conferida, mas é de outro batismo', c.v + ' pertence a ' + u.b);
+  if (u.b !== b.id) return msg('av', 'Conferida, mas é de outro batismo', c.v + ' pertence a ' + u.b + (novaMont ? ' · +1 no estoque' : ''));
+  if (novaMont) { const m = montDe(bU.mont); return msg('ok', c.v, 'Conferida · +1 no estoque' + (m ? ' · ' + m.montLocal + '/' + m.qtd + ' montadas' : '')); }
   msg('ok', c.v, 'Conferida');
 }
 $('eFechar').onclick = () => {
@@ -670,6 +701,11 @@ function lancRender(b) {
   const box = $('eLanc');
   if (!b || !faturista()) { box.classList.add('hidden'); return; }
   box.classList.remove('hidden');
+  if (b.mont) {   // batismo de montagem: entra no estoque a cada bipagem, não há o que lançar (10/11/2026)
+    const m = montDe(b.mont); LANC = null;
+    box.innerHTML = '<h3>Estoque da planilha</h3><p>✅ Cada caixa deste batismo entra no estoque quando é bipada.</p>' + (m ? montCartao(m, false) : '');
+    return;
+  }
   if (b.lanc) { box.innerHTML = '<h3>Estoque da planilha</h3><p>✅ Lançado: ' + esc(b.lanc) + '</p>'; LANC = null; return; }
   const pend = Object.keys(S.un).filter(s => S.un[s].b === b.id && S.un[s].s === ST.BAT).length;
   if (pend) { box.innerHTML = '<h3>Estoque da planilha</h3><p class="muted">Depois de conferir todas as caixas (ou marcar as que faltarem como não localizadas), lance aqui no estoque. Faltam ' + pend + '.</p>'; LANC = null; return; }
@@ -721,14 +757,99 @@ $('bGerar').onclick = function () {
   confirmar(this, 'Batizar e baixar planilha', async () => {
     $('bRes').innerHTML = '<p class="muted">Reservando os seriais na planilha…</p>';
     try {
-      const r = await api('batismo', { sku: sku, qtd: qtd, nfEnt: $('bNf').value, lotes: $('bLotes').value });
+      const r = await api('batismo', { sku: sku, qtd: qtd, nfEnt: $('bNf').value, lotes: $('bLotes').value, montagem: $('bMontBox').classList.contains('hidden') ? '' : $('bMont').value });
       await baixarPlanilha(r.prefixo, r.de, r.ate);
-      $('bRes').innerHTML = '<div class="aviso"><b>' + esc(r.id) + '</b>: ' + r.seriais.length + ' seriais, <span class="mono">' + esc(r.seriais[0]) + '</span> a <span class="mono">' + esc(r.seriais[r.seriais.length - 1]) + '</span>. A planilha foi baixada.</div>';
+      $('bRes').innerHTML = '<div class="aviso"><b>' + esc(r.id) + '</b>: ' + r.seriais.length + ' seriais, <span class="mono">' + esc(r.seriais[0]) + '</span> a <span class="mono">' + esc(r.seriais[r.seriais.length - 1]) + '</span>. A planilha foi baixada.' +
+        (r.montagem ? ' Montagem <b>' + esc(r.montagem) + '</b>: cada caixa bipada na Entrada já soma no estoque.' : '') + '</div>';
       $('bQtd').value = ''; $('bNf').value = ''; $('bLotes').value = '';
       await carregar(true);
     } catch (e) { $('bRes').innerHTML = '<p class="tag t-er">' + esc(e.message) + '</p>'; }
   });
 };
+
+// ================= CHEGADA EM MONTAGEM (faturista, 10/11/2026) =================
+// Produto que chega desmontado (ex.: 80 SX200 Prime pretos, lote PI2026604). A chegada fica na SERIAL_MONTAGENS;
+// o faturista batiza só o que foi montado, escolhendo a montagem no "Novo batismo", e cada caixa bipada na Entrada
+// soma +1 no estoque da planilha na hora (o servidor grava uma linha por dia na ENTRADAS_LOG).
+const MONT_AB = 'EM MONTAGEM';
+// montagem com a contagem local (inclui bipagens ainda na fila, que o servidor ainda não somou)
+function montDe(id) {
+  const m = (S.mont || []).find(x => x.id === id); if (!m) return null;
+  const bats = {}; S.bat.forEach(b => { if (b.mont === id) bats[b.id] = 1; });
+  let mont = 0, res = 0;
+  Object.keys(S.un).forEach(s => { const u = S.un[s]; if (!bats[u.b]) return;
+    if (u.s !== ST.NL) res++;
+    if (u.s !== ST.BAT && u.s !== ST.NL) mont++; });
+  return Object.assign({}, m, { montLocal: mont, resLocal: res, hojeLocal: m.hoje + Math.max(0, mont - m.montados) });
+}
+const diaTxt = d => String(d).slice(6, 8) + '/' + String(d).slice(4, 6);
+function montCartao(m, botoes) {
+  const desc = (S.mapa[m.sku] && S.mapa[m.sku].desc) || m.sku, pct = m.qtd ? Math.min(100, m.montLocal / m.qtd * 100) : 0;
+  const falta = Math.max(0, m.qtd - m.montLocal), aBat = Math.max(0, m.qtd - m.resLocal);
+  const sit = m.sit === MONT_AB ? '' : ' <span class="tag ' + (m.sit === 'CONCLUÍDA' ? 't-ok' : 't-cz') + '">' + esc(m.sit) + '</span>';
+  return '<div class="mt"><div><b>' + esc(m.id) + '</b> · ' + esc(desc) + sit + '</div>' +
+    '<div class="muted">' + esc(m.sku) + (m.lote ? ' · lote ' + esc(m.lote) : '') + (m.nf ? ' · NF ' + esc(m.nf) : '') + ' · chegou ' + esc(m.chegada) + '</div>' +
+    '<div class="bar"><i style="width:' + pct + '%"></i></div>' +
+    '<div><b>' + m.montLocal + '</b> de ' + m.qtd + ' montadas e no estoque' + (m.sit === MONT_AB ? ' · faltam <b>' + falta + '</b>' : '') + ' · hoje <b>' + m.hojeLocal + '</b></div>' +
+    (m.resLocal > m.montLocal ? '<div class="muted">' + (m.resLocal - m.montLocal) + ' batizada(s) aguardando a bipagem de entrada</div>' : '') +
+    (m.dias && m.dias.length ? '<div class="dias">Por dia: ' + m.dias.map(d => diaTxt(d[0]) + ' ' + d[1]).join(' · ') + '</div>' : '') +
+    (m.obs ? '<div class="dias">' + esc(m.obs) + '</div>' : '') +
+    (botoes && m.sit === MONT_AB ? '<div class="row">' + (aBat ? '<button class="btn" data-mbat="' + esc(m.id) + '">Batizar montadas</button>' : '') +
+      '<button class="btn claro" data-menc="' + esc(m.id) + '">Encerrar</button></div>' : '') + '</div>';
+}
+function montRender(skus, nomeSku) {
+  const lista = (S.mont || []).map(m => montDe(m.id)).filter(Boolean);
+  const html = lista.length ? lista.map(m => montCartao(m, true)).join('') : '<p class="muted">Nenhuma chegada em montagem.</p>';
+  if ($('mLista').innerHTML !== html && !$('mLista').querySelector('[data-c="1"]')) $('mLista').innerHTML = html;
+  const ms = $('mSku').value, opt = '<option value="">Escolha o produto…</option>' + skus.map(s => '<option value="' + esc(s) + '">' + esc(nomeSku(s)) + '</option>').join('');
+  if ($('mSku').innerHTML !== opt) { $('mSku').innerHTML = opt; $('mSku').value = ms; }
+  // "Novo batismo": montagens abertas do produto escolhido
+  const sku = $('bSku').value, abertas = lista.filter(m => m.sku === sku && m.sit === MONT_AB);
+  $('bMontBox').classList.toggle('hidden', !abertas.length);
+  const bm = $('bMont').value;
+  const optM = abertas.map(m => '<option value="' + esc(m.id) + '">' + esc(m.id + (m.lote ? ' · lote ' + m.lote : '') + ' · ' + Math.max(0, m.qtd - m.resLocal) + ' para batizar') + '</option>').join('') +
+    (abertas.length ? '<option value="">Não é de montagem (lote normal)</option>' : '');
+  if ($('bMont').innerHTML !== optM) { $('bMont').innerHTML = optM; if ([...$('bMont').options].some(o => o.value === bm)) $('bMont').value = bm; }
+  const mSel = abertas.find(m => m.id === $('bMont').value);
+  $('bQtd').placeholder = mSel ? 'Até ' + Math.max(0, mSel.qtd - mSel.resLocal) + ' (só as montadas)' : 'Ex.: 500';
+  $('bNf').placeholder = mSel && mSel.nf ? mSel.nf + ' (da montagem)' : 'Ex.: 1234';
+  $('bLotes').placeholder = mSel && mSel.lote ? mSel.lote + ' (da montagem)' : 'Ex.: lotes A, B e C misturados';
+}
+$('bSku').onchange = () => render();
+$('bMont').onchange = () => render();
+$('mNovaBtn').onclick = () => {
+  $('mNova').classList.remove('hidden'); $('mNovaBtn').classList.add('hidden'); $('mRes').innerHTML = '';
+  if (!$('mData').value) { const d = new Date(); $('mData').value = d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()); }
+};
+$('mCancelar').onclick = () => { $('mNova').classList.add('hidden'); $('mNovaBtn').classList.remove('hidden'); };
+$('mSalvar').onclick = function () {
+  const sku = $('mSku').value, qtd = Number($('mQtd').value);
+  if (!sku || !(qtd >= 1)) return $('mRes').innerHTML = '<p class="tag t-er">Escolha o produto e a quantidade.</p>';
+  confirmar(this, 'Registrar chegada', async () => {
+    $('mRes').innerHTML = '<p class="muted">Registrando…</p>';
+    try {
+      const r = await api('montagem', { op: 'criar', sku: sku, qtd: qtd, lote: $('mLote').value, nfEnt: $('mNf').value, chegada: $('mData').value });
+      $('mRes').innerHTML = '<div class="aviso"><b>' + esc(r.id) + '</b> registrada: ' + qtd + ' un. em montagem. Nada entrou no estoque ainda: batize as que forem montadas e bipe na Entrada.</div>';
+      ['mQtd', 'mLote', 'mNf'].forEach(x => $(x).value = ''); $('mNova').classList.add('hidden'); $('mNovaBtn').classList.remove('hidden');
+      await carregar(true);
+    } catch (e) { $('mRes').innerHTML = '<p class="tag t-er">' + esc(e.message) + '</p>'; }
+  });
+};
+$('mLista').addEventListener('click', function (e) {
+  const bt = e.target.closest('button'); if (!bt) return;
+  if (bt.dataset.mbat) {
+    const m = montDe(bt.dataset.mbat); if (!m) return;
+    $('bSku').value = m.sku; render(); $('bMont').value = m.id; render();
+    $('bQtd').focus(); $('bQtd').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } else if (bt.dataset.menc) {
+    const m = montDe(bt.dataset.menc); if (!m) return;
+    confirmar(bt, 'Encerrar', async () => {
+      try { const r = await api('montagem', { op: 'encerrar', id: m.id, motivo: m.montLocal < m.qtd ? 'faltaram ' + (m.qtd - m.montLocal) : '' });
+        await carregar(true); $('mRes').innerHTML = '<div class="aviso"><b>' + esc(r.id) + '</b> ' + esc(r.obs) + '</div>'; }
+      catch (e) { $('mRes').innerHTML = '<p class="tag t-er">' + esc(e.message) + '</p>'; }
+    });
+  }
+});
 
 // ================= TELA =================
 const TAGST = { 'BATIZADA': 't-cz', 'EM ESTOQUE': 't-ok', 'EXPEDIDA': 't-av', 'NÃO LOCALIZADA': 't-er' };
@@ -803,8 +924,9 @@ function render() {
   const bs = $('bSku').value;
   const optB = '<option value="">Escolha o produto…</option>' + skus.map(s => '<option value="' + esc(s) + '">' + esc(nomeSku(s)) + '</option>').join('');
   if ($('bSku').innerHTML !== optB) { $('bSku').innerHTML = optB; $('bSku').value = bs; }
+  montRender(skus, nomeSku);
   $('bLista').innerHTML = bats.length ? '<table><tr><th>Batismo</th><th>Faixa</th><th></th></tr>' + bats.slice(0, 40).map(b =>
-    '<tr><td><b>' + esc(b.id) + '</b><div class="muted">' + esc(b.data + (b.nfEnt ? ' · NF ' + b.nfEnt : '') + (b.lotes ? ' · ' + b.lotes : '')) + '</div></td><td class="mono">' + esc(b.prefixo) + ' ' + b.de + '–' + b.ate + '<div class="muted">' + b.qtd + ' un. · ' + (pendB(b) ? pendB(b) + ' a conferir' : 'conferido') + '</div></td>' +
+    '<tr><td><b>' + esc(b.id) + '</b>' + (b.mont ? ' <span class="tag t-ok">' + esc(b.mont) + '</span>' : '') + '<div class="muted">' + esc(b.data + (b.nfEnt ? ' · NF ' + b.nfEnt : '') + (b.lotes ? ' · ' + b.lotes : '')) + '</div></td><td class="mono">' + esc(b.prefixo) + ' ' + b.de + '–' + b.ate + '<div class="muted">' + b.qtd + ' un. · ' + (pendB(b) ? pendB(b) + ' a conferir' : 'conferido') + '</div></td>' +
     '<td><button class="btn claro" data-xls="' + esc(b.id) + '">Planilha</button></td></tr>').join('') + '</table>' : '<p class="muted">Nenhum batismo ainda.</p>';
   document.querySelectorAll('[data-xls]').forEach(x => x.onclick = () => { const b = S.bat.find(y => y.id === x.dataset.xls); if (b) baixarPlanilha(b.prefixo, b.de, b.ate); });
 }
