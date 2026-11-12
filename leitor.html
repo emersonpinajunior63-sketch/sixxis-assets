@@ -32,6 +32,9 @@
   .menu button.trava small { color: #9aa3ad; }
   #cam { position: relative; background: #000; border-radius: 10px; overflow: hidden; min-height: 40px; }
   #reader { width: 100%; }
+  #reader video { display: block; width: 100%; height: auto; }
+  #achou { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+  #achou i { position: absolute; border: 3px solid #4caf50; border-radius: 6px; box-shadow: 0 0 0 2px rgba(0,0,0,.35); }
   #gat { position: absolute; inset: 0; display: none; align-items: flex-end; justify-content: center; padding-bottom: 14px; z-index: 3; }
   #gat span { background: rgba(0,0,0,.6); color: #fff; padding: 8px 14px; border-radius: 20px; font-size: 14px; font-weight: 600; }
   #gat.armado span { background: var(--ok); }
@@ -104,9 +107,11 @@
   </section>
 
   <div id="leitura" class="hidden">
-    <div id="cam"><div id="reader"></div><div id="gat"><span>Toque aqui para ler</span></div></div>
+    <div id="cam"><div id="reader"></div><div id="achou"></div><div id="gat"><span>Toque aqui para ler</span></div></div>
     <div class="row">
       <button class="btn" id="bCam">Ligar câmera</button>
+      <button class="btn claro hidden" id="bLente" title="Trocar a lente da câmera">🔄 Lente</button>
+      <button class="btn claro hidden" id="bLuz" title="Lanterna">🔦</button>
       <div class="chips"><button data-lt="continuo">Contínuo</button><button data-lt="gatilho">Toque p/ ler</button></div>
     </div>
     <div class="row"><input class="txt" id="manual" placeholder="ou digite / leitor Bluetooth + Enter" autocomplete="off" autocapitalize="characters"></div>
@@ -247,12 +252,14 @@ const ST = { BAT: 'BATIZADA', EST: 'EM ESTOQUE', EXP: 'EXPEDIDA', NL: 'NÃO LOCA
 const $ = id => document.getElementById(id);
 // ---------- bibliotecas sob demanda ----------
 const LIBS = {
-  Html5Qrcode: 'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js',
+  // Leitor de códigos ZXing-C++ (WebAssembly): usado quando o navegador não tem leitor próprio (iPhone/Safari).
+  // Baixa também o zxing_reader.wasm (~1 MB, do jsDelivr) na primeira vez; depois fica no cache do aparelho.
+  BarcodeDetectionAPI: 'https://cdn.jsdelivr.net/npm/barcode-detector@3.2.3/dist/iife/ponyfill.js',
   JSZip: 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',
   pdfjsLib: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
   XLSX: 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
 };
-const LIB_NOME = { Html5Qrcode: 'da câmera', JSZip: 'de .zip', pdfjsLib: 'de PDF', XLSX: 'de planilha' };
+const LIB_NOME = { BarcodeDetectionAPI: 'da câmera', JSZip: 'de .zip', pdfjsLib: 'de PDF', XLSX: 'de planilha' };
 const _libs = {};
 function lib(g) {
   if (window[g]) return Promise.resolve();
@@ -976,23 +983,136 @@ function lidoCamera(t) {
 }
 $('gat').onclick = () => { armadoAte = Date.now() + 2000; $('gat').classList.add('armado'); setTimeout(() => { if (Date.now() > armadoAte) $('gat').classList.remove('armado'); }, 2100); };
 document.querySelectorAll('[data-lt]').forEach(b => b.onclick = () => { CFG.leitura = b.dataset.lt; ls.set('ldr_cfg', CFG); render(); });
-let scanner = null, ligada = false;
+// Câmera própria (12/11/2026, troca do html5-qrcode): o html5-qrcode encolhia o quadro de 1920 px para o tamanho da
+// mira NA TELA (~340 px) antes de decodificar, e no iPhone decodificava em JavaScript puro: código pequeno ou a chave
+// de 44 dígitos ficavam com menos de 1 pixel por barra e não liam. Agora a imagem vai em resolução cheia,
+// alternando com meia resolução (ajuda no QR pontilhado da datadora), para o leitor do sistema (Chrome do Android)
+// ou, onde não existe (iPhone), para o ZXing-C++ em WebAssembly com tentativa reforçada, invertida e reduzida.
+let ligada = false;
+const CAM = { stream: null, track: null, video: null, det: null, nativo: false, timer: 0, vez: 0, cv: null, ctx: null, lentes: [], luz: false, abrindo: false };
+const FORMATOS = ['qr_code', 'code_128'];
+const ehFrontal = l => /front|frontal|frente|user|facetime/i.test(l || '');
+async function detector() {
+  if (CAM.det) return CAM.det;
+  if ('BarcodeDetector' in window) {
+    try { const f = await BarcodeDetector.getSupportedFormats();
+      if (FORMATOS.every(x => f.indexOf(x) >= 0)) { CAM.nativo = true; return CAM.det = new BarcodeDetector({ formats: FORMATOS }); } } catch (e) {}
+  }
+  await lib('BarcodeDetectionAPI');
+  try { await BarcodeDetectionAPI.prepareZXingModule({ fireImmediately: true }); }
+  catch (e) { try { BarcodeDetectionAPI.purgeZXingModule(); } catch (e2) {} throw new Error('Leitor de códigos não carregou (confira a internet)'); }
+  CAM.nativo = false;
+  return CAM.det = new BarcodeDetectionAPI.BarcodeDetector({ formats: FORMATOS });
+}
+// Sem mira (12/11/2026): lê a imagem INTEIRA. A câmera fica no alto do celular; quem centraliza a tela sobre a caixa
+// vê o código na parte de baixo da imagem, fora da antiga faixa central. Com vários códigos na imagem: etiqueta/DANFE
+// valem todos, e de caixa (serial) vale só o mais perto do centro — para não expedir a caixa vizinha. O código lido
+// ganha um contorno verde por meio segundo.
+function lidos(res, cw, ch, f) {
+  const d = b => { const x = b.x + b.width / 2 - cw / 2, y = b.y + b.height / 2 - ch / 2; return x * x + y * y; };
+  const ser = [], out = [];
+  res.forEach(r => { if (r && r.rawValue) (classificar(r.rawValue).tipo === 'serial' ? ser : out).push(r); });
+  ser.sort((a, b) => d(a.boundingBox) - d(b.boundingBox));
+  const usar = out.concat(ser.slice(0, 1));
+  marcar(usar, f);
+  usar.forEach(r => lidoCamera(r.rawValue));
+}
+function marcar(rs, f) {
+  const v = CAM.video, box = $('achou'); if (!v || !v.clientWidth || !v.videoWidth) return;
+  const k = v.clientWidth / (v.videoWidth * f), m = 6;
+  box.innerHTML = rs.filter(r => r.boundingBox).map(r => { const b = r.boundingBox;
+    return '<i style="left:' + (b.x * k - m) + 'px;top:' + (b.y * k - m) + 'px;width:' + (b.width * k + 2 * m) + 'px;height:' + (b.height * k + 2 * m) + 'px"></i>'; }).join('');
+  clearTimeout(CAM.tMarca); CAM.tMarca = setTimeout(() => { box.innerHTML = ''; }, 500);
+}
+async function varrer() {
+  if (!ligada) return;
+  const v = CAM.video;
+  if (v && v.readyState >= 2 && v.videoWidth && document.visibilityState === 'visible' && !$('leitura').classList.contains('hidden')) {
+    const f = CAM.vez++ % 2 ? .5 : 1, cw = Math.round(v.videoWidth * f), ch = Math.round(v.videoHeight * f);
+    if (CAM.cv.width !== cw || CAM.cv.height !== ch) { CAM.cv.width = cw; CAM.cv.height = ch; }
+    try {
+      CAM.ctx.drawImage(v, 0, 0, cw, ch);
+      const res = await CAM.det.detect(CAM.cv);
+      if (ligada && res && res.length) lidos(res, cw, ch, f);
+    } catch (e) {}
+  }
+  if (ligada) CAM.timer = setTimeout(varrer, 40);
+}
+async function abrirStream(id) {
+  const base = { width: { ideal: 1920 }, height: { ideal: 1080 } };
+  const pedir = c => navigator.mediaDevices.getUserMedia({ audio: false, video: Object.assign(c, base) });
+  if (id) { try { return await pedir({ deviceId: { exact: id } }); } catch (e) { ls.set('ldr_lente', ''); } }
+  return pedir({ facingMode: { ideal: 'environment' } });
+}
+function pararStream() {
+  if (CAM.stream) CAM.stream.getTracks().forEach(t => { try { t.stop(); } catch (e) {} });
+  CAM.stream = CAM.track = null; CAM.luz = false;
+  if (CAM.video) CAM.video.srcObject = null;
+}
+async function ligarCamera(id) {
+  CAM.abrindo = true;
+  try {
+    pararStream();
+    const st = await abrirStream(id === undefined ? ls.get('ldr_lente', '') : id);
+    CAM.stream = st; CAM.track = st.getVideoTracks()[0];
+    if (!CAM.video) {
+      const v = CAM.video = document.createElement('video');
+      v.setAttribute('playsinline', ''); v.setAttribute('muted', ''); v.setAttribute('autoplay', ''); v.muted = true; v.playsInline = true;
+      $('reader').appendChild(v);
+      CAM.cv = document.createElement('canvas'); CAM.ctx = CAM.cv.getContext('2d', { willReadFrequently: true });
+    }
+    CAM.video.srcObject = st;
+    await CAM.video.play().catch(() => {});
+    try { await CAM.track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (e) {}
+    // lentes traseiras (no iPhone Pro aparecem a grande-angular, a ultra-angular e as "duplas/triplas", que trocam sozinhas para o macro)
+    try { CAM.lentes = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput' && !ehFrontal(d.label)); } catch (e) { CAM.lentes = []; }
+    $('bLente').classList.toggle('hidden', CAM.lentes.length < 2);
+    let caps = {}; try { caps = CAM.track.getCapabilities ? CAM.track.getCapabilities() : {}; } catch (e) {}
+    $('bLuz').classList.toggle('hidden', !caps.torch); $('bLuz').classList.remove('on');
+    return CAM.track.label || 'câmera';
+  } finally { CAM.abrindo = false; }
+}
+function desligarCamera() {
+  ligada = false; clearTimeout(CAM.timer); pararStream();
+  $('achou').innerHTML = ''; $('bLente').classList.add('hidden'); $('bLuz').classList.add('hidden');
+  $('bCam').textContent = 'Ligar câmera'; render();
+}
 $('bCam').onclick = async () => {
   try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
-  if (ligada) { scanner.stop().then(() => { ligada = false; $('bCam').textContent = 'Ligar câmera'; render(); }).catch(() => {}); return; }
-  if (!window.Html5Qrcode) { $('bCam').textContent = 'Abrindo…'; try { await lib('Html5Qrcode'); } catch (e) { $('bCam').textContent = 'Ligar câmera'; return msg('er', 'Biblioteca da câmera não carregou', 'Confira a internet'); } }
-  const F = Html5QrcodeSupportedFormats;
-  // useBarCodeDetectorIfSupported: no Chrome do Android usa o leitor nativo do sistema, bem melhor com o código de barras
-  // longo da chave (44 dígitos) do que o decodificador em JavaScript. Resolução maior = barras mais nítidas.
-  scanner = scanner || new Html5Qrcode('reader', { formatsToSupport: [F.QR_CODE, F.CODE_128], verbose: false, experimentalFeatures: { useBarCodeDetectorIfSupported: true } });
-  scanner.start({ facingMode: 'environment' }, {
-    fps: 12,
-    qrbox: (w, h) => { const lw = Math.floor(w * .92); return { width: lw, height: Math.max(120, Math.min(Math.floor(h * .7), Math.floor(lw * .6))) }; },
-    videoConstraints: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 }, advanced: [{ focusMode: 'continuous' }] }
-  }, lidoCamera, () => {})
-    .then(() => { ligada = true; $('bCam').textContent = 'Desligar câmera'; render(); })
-    .catch(e => msg('er', 'Não abriu a câmera', String(e)));
+  if (CAM.abrindo) return;
+  if (ligada) return desligarCamera();
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return msg('er', 'Este navegador não dá acesso à câmera', 'No iPhone, abra pelo Safari');
+  $('bCam').textContent = 'Abrindo…';
+  try {
+    await detector();
+    const nome = await ligarCamera();
+    ligada = true; $('bCam').textContent = 'Desligar câmera'; render();
+    const v = CAM.video;
+    msg('', 'Câmera ligada — vale a imagem toda', (CAM.nativo ? 'Leitor do sistema' : 'Leitor ZXing') + ' · ' + (v.videoWidth ? v.videoWidth + '×' + v.videoHeight + ' · ' : '') + nome);
+    varrer();
+  } catch (e) {
+    pararStream(); $('bCam').textContent = 'Ligar câmera';
+    msg('er', 'Não abriu a câmera', e && e.name === 'NotAllowedError' ? 'Permita o acesso à câmera para este site (no iPhone: Ajustes › Safari › Câmera)' : String(e && e.message || e));
+  }
 };
+$('bLente').onclick = async () => {
+  if (!ligada || CAM.abrindo || CAM.lentes.length < 2) return;
+  const atual = CAM.track && CAM.track.getSettings ? CAM.track.getSettings().deviceId : '';
+  const i = CAM.lentes.findIndex(d => d.deviceId === atual), prox = CAM.lentes[(i + 1) % CAM.lentes.length];
+  try { const nome = await ligarCamera(prox.deviceId); ls.set('ldr_lente', prox.deviceId);
+    msg('', 'Lente ' + ((i + 1) % CAM.lentes.length + 1) + ' de ' + CAM.lentes.length, nome + ' · fica lembrada neste aparelho'); }
+  catch (e) { msg('er', 'Não troquei a lente', String(e && e.message || e)); try { await ligarCamera(); } catch (e2) { desligarCamera(); } }
+};
+$('bLuz').onclick = async () => {
+  if (!CAM.track) return;
+  try { await CAM.track.applyConstraints({ advanced: [{ torch: !CAM.luz }] }); CAM.luz = !CAM.luz; $('bLuz').classList.toggle('on', CAM.luz); $('bLuz').style.background = CAM.luz ? '#ffe082' : ''; }
+  catch (e) { msg('av', 'A lanterna não respondeu'); }
+};
+// o iPhone encerra a câmera quando o app vai para o fundo: ao voltar, religa sozinha
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && ligada && !CAM.abrindo && (!CAM.track || CAM.track.readyState === 'ended'))
+    ligarCamera().catch(() => desligarCamera());
+});
 $('manual').addEventListener('keydown', function (e) { if (e.key === 'Enter') { processar(this.value); this.value = ''; } });
 
 // ================= INÍCIO =================
@@ -1003,7 +1123,7 @@ $('manual').addEventListener('keydown', function (e) { if (e.key === 'Enter') { 
   if (cache) {   // abre na hora com o que este aparelho já tinha; a planilha atualiza a tela em seguida
     try { S = normalizar(cache); FILA.forEach(aplicar); atualizando = true; ir('menu'); } catch (e) { S = null; atualizando = false; }
   }
-  setTimeout(() => preLib('Html5Qrcode'), 800);   // a câmera fica pronta antes de alguém tocar em "Ligar câmera"
+  setTimeout(() => detector().catch(() => {}), 800);   // o leitor de códigos fica pronto antes de alguém tocar em "Ligar câmera"
   await carregar(true);
   if (S && TELA === 'menu' && $('t-menu').classList.contains('hidden')) ir('menu');
   if (FILA.length) enviar();
