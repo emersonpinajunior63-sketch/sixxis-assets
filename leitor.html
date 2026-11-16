@@ -84,6 +84,10 @@
   .mt .bar i { display: block; height: 100%; background: var(--ok); border-radius: 4px; }
   .mt .dias { font-size: 12px; color: #5b6470; }
   .carregando { text-align: center; padding: 40px 10px; color: #6b7480; }
+  /* login com usuário e senha (16/11/2026) */
+  #t-login .card { margin-top: 18px; padding: 18px 16px; }
+  #t-login h3 { font-size: 18px; }
+  #lgErro { display: block; padding: 8px 10px; font-size: 13px; margin-top: 12px; }
 </style>
 </head>
 <body>
@@ -95,6 +99,24 @@
 <main>
   <section id="t-inicio"><div class="carregando" id="inicioTxt">Carregando…</div></section>
 
+  <!-- LOGIN (16/11/2026): mesmo usuário e senha do Painel -->
+  <section id="t-login" class="hidden">
+    <div class="card">
+      <h3>Entrar no leitor</h3>
+      <p class="muted">Use o mesmo usuário e senha do Painel Sixxis. Neste aparelho você fica conectado por 30 dias.</p>
+      <div class="aviso hidden" id="lgMsg"></div>
+      <form id="lgForm" autocomplete="on">
+        <label class="f" for="lgUser">Usuário</label>
+        <input class="txt" id="lgUser" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false">
+        <label class="f" for="lgSenha">Senha</label>
+        <input class="txt" id="lgSenha" name="password" type="password" autocomplete="current-password">
+        <p class="tag t-er hidden" id="lgErro"></p>
+        <div class="row"><button class="btn" id="lgOk" type="submit" style="flex:1;padding:12px;font-size:16px">Entrar</button></div>
+      </form>
+      <p class="muted">Esqueceu a senha? Fale com o responsável pelo painel.</p>
+    </div>
+  </section>
+
   <section id="t-menu" class="hidden">
     <div class="menu">
       <button data-ir="expedicao"><span class="ic">🚚</span><span>EXPEDIÇÃO<small>Romaneio do dia: etiqueta ou DANFE + produto</small></span></button>
@@ -104,6 +126,7 @@
       <button data-ir="batismo"><span class="ic">🏷️</span><span>BATISMO<small>Gerar seriais e a planilha da datadora</small></span></button>
     </div>
     <p class="muted" style="margin-top:16px">Os dados ficam na planilha CONTROLE ESTOQUE (abas SERIAL_*). Todos os aparelhos veem o mesmo romaneio.</p>
+      <div class="row" style="margin-top:14px"><button class="btn claro" id="bSair">Sair deste aparelho</button></div>
   </section>
 
   <div id="leitura" class="hidden">
@@ -283,7 +306,7 @@ const ls = { get(k, d) { try { const v = localStorage.getItem(k); return v == nu
   const u = new URL(location.href), k = u.searchParams.get('k');
   if (k) { ls.set('ldr_k', k); u.searchParams.delete('k'); history.replaceState(null, '', u.pathname + (u.search || '') + u.hash); }
 })();
-const K = ls.get('ldr_k', '');
+let K = ls.get('ldr_k', '');   // código da sessão (login com usuário e senha) ou, na transição, do link antigo
 const CFG = ls.get('ldr_cfg', { leitura: 'continuo' });
 
 // ---------- servidor ----------
@@ -319,7 +342,7 @@ function aplicar(ev) {   // efeito local de uma bipagem (na hora e de novo depoi
 }
 let carregando = false;
 async function carregar(forcar) {
-  if (carregando) return; carregando = true;
+  if (carregando || !K) return; carregando = true;
   try {
     const r = await api('estado', { ver: forcar || !S ? '' : S.ver });
     if (!r.mesmo) { S = normalizar(r); FILA.forEach(aplicar); ls.set('ldr_ultimo', r); ls.set('ldr_ultimo_k', K); render(); }
@@ -337,7 +360,7 @@ function enfileirar(ev) {
   clearTimeout(timerEnvio); timerEnvio = setTimeout(enviar, 600);
 }
 async function enviar() {
-  if (enviando || !FILA.length) return;
+  if (enviando || !FILA.length || !K) return;
   enviando = true;
   const lote = FILA.slice(0, 60);
   try {
@@ -372,11 +395,46 @@ setInterval(() => { if (document.visibilityState === 'visible' && !enviando && S
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S) { carregar(false); enviar(); } });
 window.addEventListener('online', () => { enviar(); carregar(false); });
 
-function semAcesso(t) {
-  ['t-menu', 't-expedicao', 't-inventario', 't-entrada', 't-situacao', 't-batismo', 'leitura'].forEach(id => $(id).classList.add('hidden'));
-  $('t-inicio').classList.remove('hidden');
-  $('inicioTxt').innerHTML = '<b>Sem acesso ao leitor.</b><br>' + esc(t) + '<br><br>Abra pelo seu link pessoal do leitor.';
+function semAcesso(t) { mostrarLogin(t); }
+
+// ---------- login (16/11/2026): mesmo usuário e senha do Painel ----------
+function mostrarLogin(t) {
+  try { if (ligada) desligarCamera(); } catch (e) {}
+  S = null; TELA = 'menu'; ABERTA = null; ULTIMAS = [];
+  ['t-inicio', 't-menu', 't-expedicao', 't-inventario', 't-entrada', 't-situacao', 't-batismo', 'leitura'].forEach(id => $(id).classList.add('hidden'));
+  $('hVoltar').classList.add('hidden'); $('hTit').textContent = TITULOS.menu; $('hQuem').textContent = '';
+  $('t-login').classList.remove('hidden');
+  $('lgMsg').textContent = t || ''; $('lgMsg').classList.toggle('hidden', !t);
+  $('lgErro').classList.add('hidden');
+  setTimeout(() => { const x = $('lgUser').value ? $('lgSenha') : $('lgUser'); try { x.focus(); } catch (e) {} }, 50);
 }
+function lgErro(t) { $('lgErro').textContent = t; $('lgErro').classList.remove('hidden'); }
+$('lgForm').onsubmit = async function (e) {
+  e.preventDefault();
+  const u = $('lgUser').value.trim(), s = $('lgSenha').value;
+  if (!u || !s) return lgErro('Informe o usuário e a senha.');
+  $('lgOk').disabled = true; $('lgOk').textContent = 'Entrando…'; $('lgErro').classList.add('hidden');
+  try {
+    let j;
+    try {
+      const r = await fetch(API_URL + '?leitor=1', { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ acao: 'entrar', usuario: u, senha: s }) });
+      j = await r.json();
+    } catch (err) { throw new Error('Sem conexão com o servidor. Confira a internet e tente de novo.'); }
+    if (j.erro || !j.t) throw new Error(j.erro || 'Não foi possível entrar.');
+    K = j.t; ls.set('ldr_k', K); $('lgSenha').value = '';
+    $('t-login').classList.add('hidden'); $('t-inicio').classList.remove('hidden'); $('inicioTxt').textContent = 'Carregando…';
+    iniciar();
+  } catch (err) { $('lgSenha').value = ''; lgErro(err.message || String(err)); }
+  finally { $('lgOk').disabled = false; $('lgOk').textContent = 'Entrar'; }
+};
+$('bSair').onclick = function () {
+  if (FILA.length) { this.textContent = 'Espere: ' + FILA.length + ' leitura(s) ainda enviando'; setTimeout(() => { this.textContent = 'Sair deste aparelho'; }, 3500); enviar(); return; }
+  confirmar(this, 'Sair deste aparelho', async () => {
+    try { await api('sair'); } catch (e) {}
+    K = ''; ls.set('ldr_k', ''); ls.set('ldr_ultimo', null); ls.set('ldr_ultimo_k', '');
+    mostrarLogin('Você saiu deste aparelho.');
+  });
+};
 
 // ---------- permissões ----------
 const pode = t => !!(S && S.quem && S.quem.telas.indexOf('leitor_' + t) >= 0);
@@ -416,7 +474,7 @@ function ir(t) {
   if (!S) return;
   if (t !== 'menu' && !podeTela(t)) return;
   TELA = t;
-  ['inicio', 'menu', 'expedicao', 'inventario', 'entrada', 'situacao', 'batismo'].forEach(x => $('t-' + x).classList.toggle('hidden', x !== t));
+  ['inicio', 'login', 'menu', 'expedicao', 'inventario', 'entrada', 'situacao', 'batismo'].forEach(x => $('t-' + x).classList.toggle('hidden', x !== t));
   $('leitura').classList.toggle('hidden', !['expedicao', 'inventario', 'entrada', 'situacao'].includes(t));
   $('hVoltar').classList.toggle('hidden', t === 'menu');
   $('hTit').textContent = TITULOS[t];
@@ -1116,17 +1174,20 @@ document.addEventListener('visibilitychange', () => {
 $('manual').addEventListener('keydown', function (e) { if (e.key === 'Enter') { processar(this.value); this.value = ''; } });
 
 // ================= INÍCIO =================
-(async function () {
-  if (!API_URL || API_URL.indexOf('http') !== 0) { $('inicioTxt').textContent = 'Esta página ainda não tem o endereço do servidor configurado.'; return; }
-  if (!K) { $('inicioTxt').innerHTML = '<b>Abra pelo seu link pessoal do leitor.</b><br>Peça o link ao responsável.'; return; }
+async function iniciar() {
   const cache = ls.get('ldr_ultimo_k', '') === K ? ls.get('ldr_ultimo', null) : null;
   if (cache) {   // abre na hora com o que este aparelho já tinha; a planilha atualiza a tela em seguida
     try { S = normalizar(cache); FILA.forEach(aplicar); atualizando = true; ir('menu'); } catch (e) { S = null; atualizando = false; }
   }
-  setTimeout(() => detector().catch(() => {}), 800);   // o leitor de códigos fica pronto antes de alguém tocar em "Ligar câmera"
   await carregar(true);
   if (S && TELA === 'menu' && $('t-menu').classList.contains('hidden')) ir('menu');
   if (FILA.length) enviar();
+}
+(async function () {
+  if (!API_URL || API_URL.indexOf('http') !== 0) { $('inicioTxt').textContent = 'Esta página ainda não tem o endereço do servidor configurado.'; return; }
+  setTimeout(() => detector().catch(() => {}), 800);   // o leitor de códigos fica pronto antes de alguém tocar em "Ligar câmera"
+  if (!K) return mostrarLogin('');   // 16/11/2026: sem sessão neste aparelho, pede usuário e senha
+  iniciar();
 })();
 </script>
 </body>
