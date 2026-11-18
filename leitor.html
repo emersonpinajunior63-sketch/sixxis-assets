@@ -88,6 +88,17 @@
   #t-login .card { margin-top: 18px; padding: 18px 16px; }
   #t-login h3 { font-size: 18px; }
   #lgErro { display: block; padding: 8px 10px; font-size: 13px; margin-top: 12px; }
+  /* devoluções (18/11/2026) */
+  .conds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0; }
+  .conds button { border: 2px solid #cfd5dc; background: #fff; border-radius: 12px; padding: 16px 4px; font-size: 16px; font-weight: 700; color: var(--tx); }
+  .conds button small { display: block; font-size: 11.5px; font-weight: 400; color: #6b7480; margin-top: 3px; }
+  .conds button.on { border-color: var(--esc); background: var(--esc); color: #fff; }
+  .conds button.on small { color: #d5dce3; }
+  .conds button:disabled { opacity: .4; }
+  .confirma { border: 2px solid var(--er); border-radius: 12px; padding: 12px; margin: 10px 0; background: #fff6f6; }
+  .confirma p { margin: 0 0 8px; font-size: 15px; }
+  .semi { background: #fde4e4; color: var(--er); border-radius: 4px; padding: 1px 6px; font-size: 11px; font-weight: 700; }
+  .menu button .badge { margin-left: auto; background: var(--er); color: #fff; border-radius: 999px; padding: 2px 9px; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -122,6 +133,7 @@
       <button data-ir="expedicao"><span class="ic">🚚</span><span>EXPEDIÇÃO<small>Romaneio do dia: etiqueta ou DANFE + produto</small></span></button>
       <button data-ir="inventario"><span class="ic">📋</span><span>INVENTÁRIO<small>Contar o que está no depósito</small></span></button>
       <button data-ir="entrada"><span class="ic">📦</span><span>ENTRADA<small>Conferir as caixas batizadas</small></span></button>
+      <button data-ir="devolucao"><span class="ic">↩️</span><span>DEVOLUÇÕES<small>Bipar a caixa que voltou</small></span><span class="badge hidden" id="devBadge"></span></button>
       <button data-ir="situacao"><span class="ic">📊</span><span>SITUAÇÃO<small>Estoque por serial e histórico</small></span></button>
       <button data-ir="batismo"><span class="ic">🏷️</span><span>BATISMO<small>Gerar seriais e a planilha da datadora</small></span></button>
     </div>
@@ -203,6 +215,17 @@
     <div class="card hidden" id="eLanc"></div>
   </section>
 
+  <!-- DEVOLUÇÕES (18/11/2026) -->
+  <section id="t-devolucao" class="hidden">
+    <div class="card" id="dCard">
+      <h3>Caixa que voltou</h3>
+      <p class="muted">Bipe a caixa (câmera acima) ou digite o serial. O leitor mostra de qual venda ela veio.</p>
+      <div class="row"><input class="txt" id="dIn" placeholder="Ex.: LIFEPT-000123" autocapitalize="characters" style="flex:1"><button class="btn" id="dBtn">Buscar</button></div>
+      <div id="dRes"></div>
+    </div>
+    <div class="card hidden fat" id="dFat"></div>
+  </section>
+
   <!-- SITUAÇÃO -->
   <section id="t-situacao" class="hidden">
     <div class="card" id="rastCard">
@@ -269,8 +292,8 @@
 // Endereço /exec da implantação do projeto do Painel com acesso "Qualquer pessoa".
 const API_URL = 'https://script.google.com/macros/s/AKfycbxoa2FBttPSApIpOeLxBMWcg1tRoXlzQk5AEbdI1fBE7j2pJ9yeWC6-Zm0pifDcRkW8/exec';
 const POLL_MS = 20000;
-const TITULOS = { menu: 'Leitor Sixxis', expedicao: 'Expedição', inventario: 'Inventário', entrada: 'Entrada', situacao: 'Situação', batismo: 'Batismo' };
-const ST = { BAT: 'BATIZADA', EST: 'EM ESTOQUE', EXP: 'EXPEDIDA', NL: 'NÃO LOCALIZADA' };
+const TITULOS = { menu: 'Leitor Sixxis', expedicao: 'Expedição', inventario: 'Inventário', entrada: 'Entrada', devolucao: 'Devoluções', situacao: 'Situação', batismo: 'Batismo' };
+const ST = { BAT: 'BATIZADA', EST: 'EM ESTOQUE', EXP: 'EXPEDIDA', NL: 'NÃO LOCALIZADA', BX: 'BAIXADA' };
 
 const $ = id => document.getElementById(id);
 // ---------- bibliotecas sob demanda ----------
@@ -324,6 +347,8 @@ const salvarFila = () => ls.set('ldr_fila', FILA);
 function normalizar(r) {
   const s = { ver: r.ver, quem: r.quem, mapa: {}, porPref: {}, bat: r.bat || [], un: {}, log: r.log || [], mont: r.mont || [] };
   (r.mapa || []).forEach(m => { s.mapa[m[0]] = { prefixo: m[1], desc: m[2] }; s.porPref[m[1]] = m[0]; });
+  // seminovos (18/11/2026): semi = SKU original → SKU seminovo · deSemi = SKU seminovo → SKU original
+  s.semi = r.semi || {}; s.deSemi = {}; Object.keys(s.semi).forEach(k => { s.deSemi[s.semi[k]] = k; });
   (r.un || []).forEach(u => { s.un[u[0]] = { sku: u[1], n: u[2], b: u[3], s: u[4], nf: u[5], chave: u[6] }; });
   s.rom = { id: r.rom.id, lotes: r.rom.lotes || [], nfs: {}, ordem: [], envio: {} };
   (r.rom.nfs || []).forEach(n => { s.rom.nfs[n.chave] = n; s.rom.ordem.push(n.chave); if (n.envio) s.rom.envio[n.envio] = n.chave; });
@@ -401,7 +426,7 @@ function semAcesso(t) { mostrarLogin(t); }
 function mostrarLogin(t) {
   try { if (ligada) desligarCamera(); } catch (e) {}
   S = null; TELA = 'menu'; ABERTA = null; ULTIMAS = [];
-  ['t-inicio', 't-menu', 't-expedicao', 't-inventario', 't-entrada', 't-situacao', 't-batismo', 'leitura'].forEach(id => $(id).classList.add('hidden'));
+  ['t-inicio', 't-menu', 't-expedicao', 't-inventario', 't-entrada', 't-devolucao', 't-situacao', 't-batismo', 'leitura'].forEach(id => $(id).classList.add('hidden'));
   $('hVoltar').classList.add('hidden'); $('hTit').textContent = TITULOS.menu; $('hQuem').textContent = '';
   $('t-login').classList.remove('hidden');
   $('lgMsg').textContent = t || ''; $('lgMsg').classList.toggle('hidden', !t);
@@ -474,16 +499,17 @@ function ir(t) {
   if (!S) return;
   if (t !== 'menu' && !podeTela(t)) return;
   TELA = t;
-  ['inicio', 'login', 'menu', 'expedicao', 'inventario', 'entrada', 'situacao', 'batismo'].forEach(x => $('t-' + x).classList.toggle('hidden', x !== t));
-  $('leitura').classList.toggle('hidden', !['expedicao', 'inventario', 'entrada', 'situacao'].includes(t));
+  ['inicio', 'login', 'menu', 'expedicao', 'inventario', 'entrada', 'devolucao', 'situacao', 'batismo'].forEach(x => $('t-' + x).classList.toggle('hidden', x !== t));
+  $('leitura').classList.toggle('hidden', !['expedicao', 'inventario', 'entrada', 'devolucao', 'situacao'].includes(t));
   $('hVoltar').classList.toggle('hidden', t === 'menu');
   $('hTit').textContent = TITULOS[t];
-  if (t !== 'menu') msg('', 'Pronto.', { entrada: 'Bipe as caixas do batismo.', expedicao: 'Bipe a etiqueta (ou a DANFE) e depois o produto.', inventario: 'Bipe as caixas do depósito.', situacao: 'Bipe uma caixa para ver a história dela.' }[t] || '');
+  if (t !== 'menu') msg('', 'Pronto.', { entrada: 'Bipe as caixas do batismo.', expedicao: 'Bipe a etiqueta (ou a DANFE) e depois o produto.', inventario: 'Bipe as caixas do depósito.', devolucao: 'Bipe a caixa que voltou.', situacao: 'Bipe uma caixa para ver a história dela.' }[t] || '');
   window.scrollTo(0, 0);
   if (t === 'batismo') preLib('XLSX');
+  if (t === 'devolucao') devAbrir();
   render();
 }
-const podeTela = t => t === 'batismo' ? faturista() : pode(t);
+const podeTela = t => t === 'batismo' ? faturista() : t === 'devolucao' ? pode('expedicao') || faturista() : pode(t);
 document.querySelectorAll('[data-ir]').forEach(b => b.onclick = () => ir(b.dataset.ir));
 $('hVoltar').onclick = () => ir('menu');
 
@@ -493,6 +519,7 @@ function processar(txt) {
   if (TELA === 'entrada') entrada(c);
   else if (TELA === 'expedicao') expedicao(c);
   else if (TELA === 'inventario') inventario(c);
+  else if (TELA === 'devolucao') { devolucao(c); return; }
   else if (TELA === 'situacao') { if (c.tipo === 'serial') { $('rastIn').value = c.v; rastrear(c.v); } else msg('er', 'Isso não é o serial de uma caixa', c.v); return; }
   else return;
   render();
@@ -505,9 +532,15 @@ const pref = sku => S.mapa[sku] ? S.mapa[sku].prefixo : sku;
 function progresso(n) {
   const cont = {};
   Object.keys(S.un).forEach(s => { const u = S.un[s]; if (u.s === ST.EXP && u.chave === n.chave) cont[u.sku] = (cont[u.sku] || 0) + 1; });
+  // Item sem serial (peças, seminovos): conferido pela NF. Se vier caixa com serial (seminova que voltou de devolução,
+  // 18/11/2026), ela pode ser bipada: cx = caixas bipadas, sem exigir (a seminova antiga não tem serial).
   return n.itens.map(it => temSerial(it.sku) ? { sku: it.sku, qtd: it.qtd, feito: cont[it.sku] || 0, serial: true }
-                                             : { sku: it.sku, qtd: it.qtd, feito: n.etq ? it.qtd : 0, serial: false });
+                                             : { sku: it.sku, qtd: it.qtd, feito: n.etq ? it.qtd : 0, serial: false, cx: cont[it.sku] || 0 });
 }
+// ainda cabe caixa deste item? (com serial: até a quantidade; sem serial: até a quantidade de caixas)
+const cabe = p => p.serial ? p.feito < p.qtd : (p.cx || 0) < p.qtd;
+// SKU seminovo (coluna E da SERIAL_MAPA)? Devolve o SKU original dele, ou ''
+const semiDe = sku => (S && S.deSemi && S.deSemi[sku]) || '';
 const completo = n => n.etq && progresso(n).every(p => p.feito >= p.qtd);
 const rotulo = n => 'NF ' + n.nf + ' · ' + n.loja;
 const LOJA_CNPJ = { '67094763000110': 'AR BRASIL', '48481625000149': 'SAO PAULO', '27390416000110': 'GOIANIA', '40573611000143': 'LONDRINA', '54978947000109': 'IMPORTAÇÃO', '05829419000174': 'MATRIZ BF' };
@@ -521,6 +554,9 @@ function abrir(n) {
   if (!n.etq) enfileirar({ tipo: 'etiqueta', chave: n.chave });
   const cs = progresso(n).filter(x => x.serial);
   const esp = ESPERA && Date.now() <= ESPERA.ate ? ESPERA.serial : null; ESPERA = null;
+  // seminova com serial bipada antes da etiqueta: entra mesmo com a NF já conferida pela nota (18/11/2026)
+  const uE = esp && S.un[esp];
+  if (uE && !temSerial(uE.sku) && progresso(n).some(p => p.sku === uE.sku && cabe(p))) return expedicao({ tipo: 'serial', v: esp });
   if (completo(n)) return msg(esp ? 'er' : 'ok', '✅ ' + rotulo(n) + ' conferida', esp ? 'Já estava completa: a caixa ' + esp + ' bipada antes NÃO entrou nela' : cs.length ? 'Já estava completa' : 'Itens sem serial: conferidos pela nota');
   if (esp) {   // a caixa bipada antes entra agora nesta NF (mesmas checagens de sempre)
     const u = S.un[esp], p = u && progresso(n).find(x => x.sku === u.sku);
@@ -544,11 +580,12 @@ function expedicao(c) {
   const u = S.un[c.v];
   if (!u) return msg('er', 'Serial não cadastrado', c.v + ' — se o batismo é novo, aguarde a tela atualizar');
   const n = ABERTA && S.rom.nfs[ABERTA];
-  if (!n || n.canc || completo(n)) {
+  const semN = n && !n.canc && !temSerial(u.sku) && progresso(n).some(p => p.sku === u.sku && cabe(p));   // seminova com serial numa NF já conferida pela nota
+  if (!n || n.canc || (completo(n) && !semN)) {
     if (u.s === ST.EXP) return msg('er', 'Caixa já expedida', c.v + ' · NF ' + u.nf);
     if (u.s === ST.BAT) return msg('er', 'Caixa não conferida na entrada', c.v + ' — está como BATIZADA');
     if (u.s === ST.NL) return msg('er', 'Caixa marcada como não localizada', 'Dê entrada nela de novo antes de expedir');
-    const pend = nfsRom().filter(x => !completo(x) && progresso(x).some(p => p.serial && p.sku === u.sku && p.feito < p.qtd));
+    const pend = nfsRom().filter(x => (!completo(x) || !temSerial(u.sku)) && progresso(x).some(p => p.sku === u.sku && cabe(p)));
     if (!pend.length) return msg('er', 'Produto órfão', 'Nenhuma NF pendente do romaneio pede ' + pref(u.sku) + ' (' + u.sku + ')');
     ESPERA = { serial: c.v, ate: Date.now() + ESPERA_MS };
     return msg('av', 'Caixa ' + c.v + ' lida — agora bipe a etiqueta dela', 'Ou a DANFE. A caixa entra sozinha na NF (vale por 1 minuto).');
@@ -557,10 +594,15 @@ function expedicao(c) {
   if (u.s === ST.BAT) return msg('er', 'Caixa não conferida na entrada', c.v + ' — está como BATIZADA');
   if (u.s === ST.NL) return msg('er', 'Caixa marcada como não localizada', 'Dê entrada nela de novo antes de expedir');
   const p = progresso(n).find(x => x.sku === u.sku);
-  if (!p) return msg('er', 'Produto errado para esta NF', c.v + ' é ' + u.sku + ' · a NF ' + n.nf + ' pede ' + n.itens.map(i => i.sku).join(', '));
-  if (p.feito >= p.qtd) return msg('er', 'Quantidade já completa', u.sku + ': ' + fmtQ(p.qtd) + ' de ' + fmtQ(p.qtd));
+  if (!p) {
+    const orig = semiDe(u.sku);
+    if (orig && n.itens.some(i => i.sku === orig)) return msg('er', 'Esta caixa é SEMINOVA', c.v + ' voltou de devolução e está em ' + u.sku + ' · a NF ' + n.nf + ' pede o novo (' + orig + ')');
+    return msg('er', 'Produto errado para esta NF', c.v + ' é ' + u.sku + ' · a NF ' + n.nf + ' pede ' + n.itens.map(i => i.sku).join(', '));
+  }
+  if (!cabe(p)) return msg('er', 'Quantidade já completa', u.sku + ': ' + fmtQ(p.qtd) + ' de ' + fmtQ(p.qtd));
   enfileirar({ tipo: 'caixa', serial: c.v, chave: n.chave });
   ULTIMAS.push(c.v);
+  if (!p.serial) return msg('ok', c.v, u.sku + (semiDe(u.sku) ? ' (seminova)' : '') + ' · caixa ' + ((p.cx || 0) + 1) + ' de ' + fmtQ(p.qtd));
   if (completo(n)) return msg('ok', '✅ NF ' + n.nf + ' conferida', 'Pode fechar o volume. Próxima!');
   msg('ok', c.v, u.sku + ' · ' + (p.feito + 1) + ' de ' + fmtQ(p.qtd));
 }
@@ -692,6 +734,9 @@ function inventario(c) {
   if (S.inv && S.inv.b[c.v]) return msg('av', 'Já contada', c.v);
   enfileirar({ tipo: 'inv', serial: c.v });
   if (u.s !== ST.EST) return msg('av', c.v + ' — sistema diz ' + u.s, u.s === ST.EXP ? 'Expedida na NF ' + u.nf + ', mas está no depósito' : 'Vai aparecer como sobra');
+  const f = $('iSku').value;
+  if (semiDe(u.sku)) return msg('av', c.v + ' é SEMINOVA', 'Está em ' + u.sku + (f && f !== u.sku ? ' · não conta como ' + f : '') + ' · separe das novas');
+  if (f && f !== u.sku) return msg('av', c.v + ' é de outro produto', u.sku + ' · não conta como ' + f);
   msg('ok', c.v, u.sku + ' · ' + S.inv.ord.length + ' contadas');
 }
 function resultadoInv() {
@@ -731,7 +776,8 @@ function entrada(c) {
   if (c.tipo !== 'serial') return msg('er', 'Isso não é o serial de uma caixa', c.v);
   const u = S.un[c.v];
   if (!u) return msg('er', 'Serial não cadastrado', c.v);
-  if (u.sku !== b.sku) return msg('er', 'Caixa de outro produto', c.v + ' é ' + u.sku + ', o batismo é ' + b.sku);
+  if (u.sku !== b.sku) return semiDe(u.sku) === b.sku ? msg('er', 'Esta caixa é SEMINOVA', c.v + ' voltou de devolução e está em ' + u.sku + ' · não conta como nova')
+    : msg('er', 'Caixa de outro produto', c.v + ' é ' + u.sku + ', o batismo é ' + b.sku);
   if (u.s === ST.EST) return msg('av', 'Já conferida', c.v);
   if (u.s === ST.EXP) return msg('er', 'Esta caixa já foi expedida', c.v + ' · NF ' + u.nf);
   const bU = S.bat.find(x => x.id === u.b), novaMont = bU && bU.mont && (u.s === ST.BAT || u.s === ST.NL);
@@ -916,14 +962,144 @@ $('mLista').addEventListener('click', function (e) {
   }
 });
 
+// ================= DEVOLUÇÕES (18/11/2026) =================
+// A expedição bipa a caixa que voltou; o leitor cruza com a venda (NF, filial, pedido, cliente) e quem bipou escolhe
+// NOVO, SEMINOVO ou PEÇA, envia e confirma. O servidor (Devolucoes.gs) grava na aba SERIAL_DEVOLUCOES, muda a caixa
+// (NOVO e SEMINOVO voltam EM ESTOQUE; o seminovo troca de SKU com o mesmo serial; PEÇA fica BAIXADA) e lança o estoque.
+// Precisa de internet: a consulta e o registro vão direto à planilha (não entram na fila das bipagens).
+const COND_TXT = { NOVO: 'NOVO', SEMINOVO: 'SEMINOVO', 'PEÇA': 'PEÇA', PECA: 'PEÇA' };
+let DEV = null;    // { serial, d, cond, obs, etapa: buscando|erro|bloqueio|escolher|confirmar|enviando|feito, res, erro }
+let DEVL = null;   // lista do faturista (aguardando NF-e, estoque pendente, contagem dupla, recentes)
+function devolucao(c) {
+  if (!podeTela('devolucao')) return;
+  if (c.tipo !== 'serial') return msg('er', 'Isso não é o serial de uma caixa', c.v);
+  if (DEV && DEV.serial === c.v && ['buscando', 'escolher', 'confirmar', 'enviando'].includes(DEV.etapa)) return;   // a câmera relendo a mesma caixa
+  if (DEV && DEV.etapa === 'enviando') return msg('av', 'Aguarde', 'Ainda enviando a devolução de ' + DEV.serial);
+  if (DEV && DEV.etapa === 'confirmar') return msg('av', 'Termine a caixa ' + DEV.serial + ' primeiro', 'Confirme ou toque em Voltar');
+  $('dIn').value = c.v; devConsultar(c.v);
+}
+async function devConsultar(serial) {
+  serial = String(serial || '').trim().toUpperCase(); if (!serial) return;
+  DEV = { serial, etapa: 'buscando' }; devRender(); msg('', 'Buscando ' + serial + '…');
+  try {
+    const d = await api('devolucao', { op: 'consultar', serial });
+    DEV = { serial, d, cond: '', obs: '', etapa: d.bloqueio ? 'bloqueio' : 'escolher' };
+    if (d.bloqueio) msg('er', serial + ' — não é devolução', d.bloqueio);
+    else msg('ok', serial, d.venda ? 'NF ' + d.venda.nf + ' · ' + d.venda.loja + (d.venda.cliente ? ' · ' + d.venda.cliente : '') : 'Expedida');
+  } catch (e) {
+    if (e.semAcesso) return semAcesso(e.message);
+    DEV = { serial, etapa: 'erro', erro: e.message }; msg('er', 'Não foi possível', e.message);
+  }
+  devRender();
+}
+function devRender() {
+  const box = $('dRes'); if (!box) return;
+  if (!DEV) { box.innerHTML = ''; return; }
+  const L = (k, v) => v ? '<tr><td class="muted">' + k + '</td><td>' + v + '</td></tr>' : '';
+  if (DEV.etapa === 'buscando') { box.innerHTML = '<p class="muted">Buscando ' + esc(DEV.serial) + '…</p>'; return; }
+  if (DEV.etapa === 'erro') { box.innerHTML = '<p class="tag t-er">' + esc(DEV.erro) + '</p>'; return; }
+  const d = DEV.d, v = d.venda || {};
+  const sitTag = v.situacao ? ' <span class="tag ' + (/^atendido$/i.test(v.situacao) ? 't-ok' : 't-av') + '">' + esc(v.situacao) + '</span>' : (v.pedido ? ' <span class="tag t-cz">situação não achada</span>' : '');
+  let h = '<p><b class="mono">' + esc(d.serial) + '</b> <span class="tag ' + (TAGST[d.status] || 't-cz') + '">' + esc(d.status) + '</span><br>' + esc(d.desc || '') + ' <span class="muted">(' + esc(d.sku) + ')</span>' + (d.ehSemi ? ' <span class="semi">SEMINOVA</span>' : '') + '</p>' +
+    (d.venda ? '<h4>Veio de</h4><table>' + L('NF', esc(v.nf) + ' · <b>' + esc(v.loja) + '</b>' + (v.emi ? ' · emitida ' + esc(v.emi) : '')) +
+      L('Pedido', (v.pedido ? '<b>' + esc(v.pedido) + '</b>' : '<span class="muted">não identificado</span>') + sitTag) +
+      L('Cliente', esc(v.cliente) + (v.cidade ? ' · ' + esc(v.cidade) : '')) + L('Canal', esc(v.canal)) + L('Vendedor', esc(v.vendedor)) + L('Envio ML', esc(v.envio)) +
+      L('Saiu em', esc(d.expEm) + (d.expPor ? ' · ' + esc(d.expPor) : '')) + '</table>' : '');
+  if (DEV.etapa === 'bloqueio') { box.innerHTML = h + '<div class="aviso">' + esc(d.bloqueio) + '</div>'; return; }
+  if (DEV.etapa === 'feito') {
+    const r = DEV.res;
+    box.innerHTML = h + '<div class="aviso"><b>' + esc(r.id) + '</b> registrada como <b>' + esc(COND_TXT[r.cond] || r.cond) + '</b>' + (r.dest !== r.sku ? ' → ' + esc(r.dest) : '') +
+      '.<br>Estoque: ' + esc(r.estoque) + '</div><div class="row"><button class="btn" data-dv="prox">Próxima caixa</button></div>';
+    return;
+  }
+  const c = DEV.cond, bt = (k, t, sub, dis) => '<button type="button" data-cond="' + k + '" class="' + (c === k ? 'on' : '') + '"' + (dis ? ' disabled' : '') + '>' + t + '<small>' + sub + '</small></button>';
+  h += '<h4>Como ela voltou?</h4><div class="conds">' +
+    bt('NOVO', 'NOVO', 'volta ao estoque') +
+    bt('SEMINOVO', 'SEMINOVO', d.semi ? 'vai para ' + esc(d.semi) : 'sem SKU seminovo', !d.semi) +
+    bt('PECA', 'PEÇA', 'não volta ao estoque') + '</div>' +
+    (!d.semi ? '<p class="muted">Seminovo indisponível: o faturista precisa cadastrar o SKU seminovo deste produto (coluna E da SERIAL_MAPA).</p>' : '') +
+    '<label class="f" for="dObs">Observação (opcional)</label><input class="txt" id="dObs" maxlength="300" placeholder="Ex.: caixa amassada, falta o banco" value="' + esc(DEV.obs) + '"' + (DEV.etapa !== 'escolher' ? ' disabled' : '') + '>';
+  if (DEV.etapa === 'escolher') h += (DEV.erro ? '<p class="tag t-er">' + esc(DEV.erro) + '</p>' : '') +
+    '<div class="row"><button class="btn claro" data-dv="cancelar">Cancelar</button><button class="btn" data-dv="enviar" style="flex:1"' + (c ? '' : ' disabled') + '>Enviar</button></div>';
+  else if (DEV.etapa === 'confirmar') h += '<div class="confirma"><p>Confirmar: <b class="mono">' + esc(d.serial) + '</b> volta como <b>' + esc(COND_TXT[c]) + '</b>' +
+    (c === 'SEMINOVO' ? ' (vai para <b>' + esc(d.semi) + '</b>)' : c === 'PECA' ? ' (sai do estoque de produto)' : ' (volta para ' + esc(d.sku) + ')') + '?</p>' +
+    (DEV.obs ? '<p class="muted">Obs.: ' + esc(DEV.obs) + '</p>' : '') +
+    '<div class="row"><button class="btn claro" data-dv="voltar">Voltar</button><button class="btn verm" data-dv="confirmar" style="flex:1">Confirmar envio</button></div></div>';
+  else if (DEV.etapa === 'enviando') h += '<p class="muted">Enviando para a planilha…</p>';
+  box.innerHTML = h;
+}
+$('dRes').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b || b.disabled || !DEV) return;
+  if (b.dataset.cond && DEV.etapa === 'escolher') { DEV.cond = b.dataset.cond; DEV.erro = ''; devRender(); return; }
+  const a = b.dataset.dv;
+  if (a === 'enviar' && DEV.cond) { DEV.etapa = 'confirmar'; devRender(); msg('av', 'Confira e confirme', DEV.serial + ' como ' + COND_TXT[DEV.cond]); }
+  else if (a === 'voltar') { DEV.etapa = 'escolher'; devRender(); }
+  else if (a === 'confirmar') devEnviar();
+  else if (a === 'cancelar' || a === 'prox') { DEV = null; $('dIn').value = ''; devRender(); msg('', 'Pronto.', 'Bipe a caixa que voltou.'); }
+});
+$('dRes').addEventListener('input', e => { if (e.target.id === 'dObs' && DEV) DEV.obs = e.target.value; });
+$('dBtn').onclick = () => devolucao(classificar($('dIn').value));
+$('dIn').onkeydown = e => { if (e.key === 'Enter') devolucao(classificar($('dIn').value)); };
+async function devEnviar() {
+  if (!DEV || DEV.etapa !== 'confirmar') return;
+  DEV.etapa = 'enviando'; devRender();
+  try {
+    await esperarFila();
+    const r = await api('devolucao', { op: 'registrar', serial: DEV.serial, cond: DEV.cond, obs: DEV.obs, confirmar: true });
+    DEV.etapa = 'feito'; DEV.res = r;
+    msg('ok', '↩️ ' + r.id + ' registrada', DEV.serial + ' · ' + (COND_TXT[r.cond] || r.cond) + (r.pendente ? ' · estoque pendente (faturista)' : ''));
+    carregar(true);
+    if (faturista()) devLista();
+  } catch (e) {
+    if (e.semAcesso) return semAcesso(e.message);
+    DEV.etapa = 'escolher'; DEV.erro = e.message; msg('er', 'A devolução NÃO foi registrada', e.message);
+  }
+  devRender();
+}
+function devAbrir() { devRender(); if (faturista()) devLista(); }
+async function devLista() {
+  try { DEVL = await api('devolucao', { op: 'listar' }); } catch (e) { DEVL = { erro: e.message }; }
+  devFatRender(); render();
+}
+function devFatRender() {
+  const box = $('dFat'); if (!box) return;
+  box.classList.toggle('hidden', !faturista() || !DEVL);
+  if (!faturista() || !DEVL) return;
+  if (DEVL.erro) { box.innerHTML = '<h3>Devoluções</h3><p class="tag t-er">' + esc(DEVL.erro) + '</p>'; return; }
+  const li = (o, extra) => '<li><b>' + esc(o.id) + '</b> · <span class="mono">' + esc(o.serial) + '</span> · ' + esc(COND_TXT[o.cond] || o.cond) +
+    '<br><span class="muted">' + esc(o.em) + ' · NF ' + esc(o.nf) + ' ' + esc(o.loja) + (o.ped ? ' · ped. ' + esc(o.ped) : '') + (o.cli ? ' · ' + esc(o.cli) : '') + '</span>' + (extra || '') + '</li>';
+  let h = '<h3>Devoluções · faturista</h3>';
+  h += '<h4>Aguardando NF-e de devolução (' + DEVL.aguard.length + ')</h4>' + (DEVL.aguard.length
+    ? '<ul class="l">' + DEVL.aguard.map(o => li(o)).join('') + '</ul><p class="muted">Emitida a NF-e, marque a coluna R da aba SERIAL_DEVOLUCOES (ou pelo aviso no painel). Não mexe no estoque.</p>'
+    : '<p class="muted">✅ Nenhuma.</p>');
+  if (DEVL.pend.length) h += '<h4>Estoque pendente (' + DEVL.pend.length + ')</h4><ul class="l">' + DEVL.pend.map(o => li(o,
+    '<br><span class="muted">Pedido não achado na aba da loja. Rode Atualizar situações e lance.</span><div class="row"><button class="btn claro" data-dl="lancar" data-id="' + esc(o.id) + '">Lançar estoque</button></div>')).join('') + '</ul>';
+  if (DEVL.conf.length) h += '<h4>Contou duas vezes (' + DEVL.conf.length + ')</h4><ul class="l">' + DEVL.conf.map(o => li(o,
+    '<br><span class="muted">Lançada com o pedido Atendido; agora o pedido está <b>' + esc(o.sitAgora) + '</b> e o saldo devolveu a unidade de novo.</span><div class="row"><button class="btn verm" data-dl="corrigir" data-id="' + esc(o.id) + '">Corrigir (−1 ' + esc(o.sku) + ')</button></div>')).join('') + '</ul>';
+  h += '<h4>Últimas</h4>' + (DEVL.recentes.length ? '<ul class="l">' + DEVL.recentes.slice(0, 10).map(o => li(o, '<br><span class="muted">' + esc(o.estoque) + (o.nfFeita ? ' · NF-e feita' + (o.nfDev ? ' ' + esc(o.nfDev) : '') : '') + '</span>')).join('') + '</ul>' : '<p class="muted">Nenhuma devolução ainda.</p>');
+  box.innerHTML = h;
+}
+$('dFat').addEventListener('click', e => {
+  const b = e.target.closest('button[data-dl]'); if (!b || b.disabled) return;
+  const op = b.dataset.dl, id = b.dataset.id, rot = b.textContent;
+  confirmar(b, rot, async () => {
+    b.disabled = true;
+    try { const r = await api('devolucao', { op, id }); msg('ok', id + (op === 'lancar' ? ': estoque lançado' : ': corrigida'), r.estoque); await carregar(true); devLista(); }
+    catch (e) { b.disabled = false; msg('er', 'Não foi possível', e.message); }
+  });
+});
+
 // ================= TELA =================
-const TAGST = { 'BATIZADA': 't-cz', 'EM ESTOQUE': 't-ok', 'EXPEDIDA': 't-av', 'NÃO LOCALIZADA': 't-er' };
+const TAGST = { 'BATIZADA': 't-cz', 'EM ESTOQUE': 't-ok', 'EXPEDIDA': 't-av', 'NÃO LOCALIZADA': 't-er', 'BAIXADA': 't-cz' };
 function render() {
   if (!S) return;
   $('hQuem').textContent = S.quem.nome; syncTxt();
   document.querySelectorAll('.menu [data-ir]').forEach(b => { const t = b.dataset.ir, ok = podeTela(t);
     b.classList.toggle('trava', !ok); b.disabled = !ok; b.classList.toggle('hidden', t === 'batismo' && !ok);
-    b.querySelector('.ic').textContent = ok ? { expedicao: '🚚', inventario: '📋', entrada: '📦', situacao: '📊', batismo: '🏷️' }[t] : '🔒'; });
+    b.querySelector('.ic').textContent = ok ? { expedicao: '🚚', inventario: '📋', entrada: '📦', devolucao: '↩️', situacao: '📊', batismo: '🏷️' }[t] : '🔒'; });
+  // devoluções aguardando NF-e (só o faturista vê o número)
+  const nAg = faturista() && DEVL && DEVL.aguard ? DEVL.aguard.length : 0;
+  $('devBadge').textContent = nAg ? nAg + ' NF-e' : ''; $('devBadge').classList.toggle('hidden', !nAg);
   document.querySelectorAll('.fat').forEach(x => x.classList.toggle('hidden', !faturista()));
   document.querySelectorAll('[data-lt]').forEach(b => b.classList.toggle('on', b.dataset.lt === CFG.leitura));
   $('gat').style.display = (CFG.leitura === 'gatilho' && ligada) ? 'flex' : 'none';
@@ -954,7 +1130,11 @@ function render() {
   // lista de produtos em uma linha: "Descrição (SKU)", em ordem alfabética da descrição (SERIAL_MAPA, coluna C)
   const nomeSku = s => ((S.mapa[s].desc || '').trim() || pref(s)) + ' (' + s + ')';
   const skus = Object.keys(S.mapa).sort((a, b) => nomeSku(a).localeCompare(nomeSku(b), 'pt-BR'));
-  if ($('iSku').options.length !== skus.length + 1) $('iSku').innerHTML = '<option value="">Todos os SKUs</option>' + skus.map(s => '<option value="' + esc(s) + '">' + esc(nomeSku(s)) + '</option>').join('');
+  // seminovos com caixa batizada (voltaram de devolução, 18/11/2026) também entram na lista
+  const semis = [...new Set(Object.keys(S.un).map(x => S.un[x].sku).filter(k => !S.mapa[k]))].sort();
+  if ($('iSku').options.length !== skus.length + semis.length + 1) { const iv = $('iSku').value;
+    $('iSku').innerHTML = '<option value="">Todos os SKUs</option>' + skus.map(s => '<option value="' + esc(s) + '">' + esc(nomeSku(s)) + '</option>').join('') +
+      semis.map(s => '<option value="' + esc(s) + '">' + esc(s + (semiDe(s) ? ' (seminovo)' : '')) + '</option>').join(''); $('iSku').value = iv; }
   const r = resultadoInv();
   $('iBip').textContent = r.bip.length; $('iOk').textContent = r.ok; $('iFalta').textContent = r.falt.length; $('iSobra').textContent = r.sobra.length;
   // Sem contagem aberta nada está "faltando": o número é só quanto o sistema tem EM ESTOQUE, a conferir (04/11/2026)
@@ -981,7 +1161,7 @@ function render() {
   Object.keys(S.un).forEach(s => { const u = S.un[s]; porSku[u.sku] = porSku[u.sku] || { 'BATIZADA': 0, 'EM ESTOQUE': 0, 'EXPEDIDA': 0, 'NÃO LOCALIZADA': 0 }; porSku[u.sku][u.s] = (porSku[u.sku][u.s] || 0) + 1; });
   const ks = Object.keys(porSku).sort((a, b) => pref(a).localeCompare(pref(b)));
   $('sTab').innerHTML = ks.length ? '<table><tr><th>Produto</th><th>Batizada</th><th>Em estoque</th><th>Expedida</th><th>Não loc.</th></tr>' +
-    ks.map(k => '<tr><td><b>' + esc(pref(k)) + '</b><div class="muted">' + esc(k) + '</div></td><td>' + porSku[k]['BATIZADA'] + '</td><td><b>' + porSku[k]['EM ESTOQUE'] + '</b></td><td>' + porSku[k]['EXPEDIDA'] + '</td><td>' + porSku[k]['NÃO LOCALIZADA'] + '</td></tr>').join('') + '</table>' : '<p class="muted">Nenhuma caixa batizada ainda.</p>';
+    ks.map(k => '<tr><td><b>' + esc(pref(k)) + '</b>' + (semiDe(k) ? ' <span class="semi">SEMINOVO</span>' : '') + '<div class="muted">' + esc(k) + '</div></td><td>' + porSku[k]['BATIZADA'] + '</td><td><b>' + porSku[k]['EM ESTOQUE'] + '</b></td><td>' + porSku[k]['EXPEDIDA'] + '</td><td>' + porSku[k]['NÃO LOCALIZADA'] + '</td></tr>').join('') + '</table>' : '<p class="muted">Nenhuma caixa batizada ainda.</p>';
   buscar();
   $('sLog').innerHTML = S.log.map(l => '<li><span class="muted">' + esc(l[0]) + ' · ' + esc(l[1]) + ' · ' + esc(l[2]) + '</span><br><span class="mono">' + esc(l[3]) + '</span> — ' + esc(l[5]) + (l[4] && l[4].length < 30 ? ' <span class="muted">(' + esc(l[4]) + ')</span>' : '') + '</li>').join('') || '<li class="muted">Nenhuma bipagem ainda.</li>';
 
@@ -1004,7 +1184,7 @@ $('sBusca').oninput = buscar;
 $('sRes').onclick = e => { const a = e.target.closest('[data-rast]'); if (!a) return; e.preventDefault(); $('rastIn').value = a.dataset.rast; rastrear(a.dataset.rast); $('rastCard').scrollIntoView({ behavior: 'smooth' }); };
 
 // ================= RASTREAR (história da caixa) =================
-const MODO_TXT = { 'BATISMO': '🏷️ Batizada', 'ENTRADA': '📦 Entrada', 'EXPEDIÇÃO': '🚚 Expedição', 'INVENTÁRIO': '📋 Inventário', 'ESTOQUE': '🧾 Estoque' };
+const MODO_TXT = { 'BATISMO': '🏷️ Batizada', 'ENTRADA': '📦 Entrada', 'EXPEDIÇÃO': '🚚 Expedição', 'INVENTÁRIO': '📋 Inventário', 'ESTOQUE': '🧾 Estoque', 'DEVOLUÇÃO': '↩️ Devolução', 'BAIXA': '🗑️ Baixa' };
 async function rastrear(serial) {
   serial = String(serial || '').trim().toUpperCase(); if (!serial) return;
   const box = $('rastRes'); box.innerHTML = '<p class="muted">Buscando ' + esc(serial) + '…</p>';
@@ -1182,6 +1362,7 @@ async function iniciar() {
   await carregar(true);
   if (S && TELA === 'menu' && $('t-menu').classList.contains('hidden')) ir('menu');
   if (FILA.length) enviar();
+  if (S && faturista()) devLista();   // número de devoluções aguardando NF-e no menu
 }
 (async function () {
   if (!API_URL || API_URL.indexOf('http') !== 0) { $('inicioTxt').textContent = 'Esta página ainda não tem o endereço do servidor configurado.'; return; }
