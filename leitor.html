@@ -69,6 +69,10 @@
   .mono { font-family: ui-monospace, monospace; font-size: 12.5px; word-break: break-all; }
   .ped { font-size: 12.5px; font-weight: 600; color: var(--esc); margin-top: 2px; } .ped.esp { font-weight: 400; color: #8a6200; }
   .sers { font-family: ui-monospace, monospace; font-size: 12px; color: var(--ok); font-weight: 600; margin-top: 2px; }
+  /* desfazer uma caixa específica (24/11/2026): o serial embaixo da NF vira botão */
+  button.sers { display: block; border: 1px solid #cfe5d2; background: #f3faf4; border-radius: 6px; padding: 4px 6px; text-align: left; cursor: pointer; }
+  button.sers .x { color: var(--er); font-weight: 700; margin-left: 6px; }
+  #xDesf { border: 2px solid var(--er); background: #fff6f6; }
   .muted { color: #6b7480; font-size: 13px; }
   ul.l { list-style: none; padding: 0; margin: 0; }
   ul.l li { padding: 6px 0; border-bottom: 1px solid #eef0f3; font-size: 13.5px; }
@@ -164,6 +168,7 @@
       <div id="rImpr" class="muted"></div>
       <p class="muted fat" style="margin:6px 0 0">Lote = XMLs do Bling (.xml ou .zip) + PDF da etiqueta casada, tudo de uma vez.</p>
     </div>
+    <div class="card hidden" id="xDesf"></div>
     <div class="card" style="padding:4px 8px">
       <table><thead><tr><th>NF · loja</th><th>Produto</th><th class="ck">Etiq.</th><th class="ck">Prod.</th></tr></thead><tbody id="rLin"></tbody></table>
       <p class="muted hidden" id="rVazio" style="padding:8px"></p>
@@ -173,6 +178,7 @@
       <button class="btn claro" id="xPend">Ver pendências</button>
       <button class="btn claro fat" id="xNovoDia">Novo dia</button>
     </div>
+    <p class="muted">Bipou a caixa errada? Toque no serial dela, embaixo da NF, para tirar só aquela caixa (funciona em qualquer aparelho, até o Novo dia).</p>
     <div class="card hidden" id="xResumo"></div>
   </section>
 
@@ -610,6 +616,33 @@ $('xDesfazer').onclick = () => {
   const s = ULTIMAS.pop(); if (!s) return msg('av', 'Nada para desfazer neste aparelho');
   enfileirar({ tipo: 'desfazerCaixa', serial: s }); render(); msg('av', 'Desfeito: ' + s, 'Voltou para EM ESTOQUE');
 };
+// Desfazer uma caixa específica (24/11/2026): toca no serial embaixo da NF → confirma → volta para EM ESTOQUE.
+// Vale em qualquer aparelho (não depende da lista "últimas" deste celular). A planilha só aceita enquanto a NF
+// estiver no romaneio aberto (antes do Novo dia).
+let DESF = null;
+function desfRender() {
+  const box = $('xDesf');
+  const u = DESF && S.un[DESF], n = u && u.chave && S.rom.nfs[u.chave];
+  if (!DESF || !u || u.s !== ST.EXP || !n) { DESF = null; box.classList.add('hidden'); box.innerHTML = ''; return; }
+  box.classList.remove('hidden');
+  box.innerHTML = '<h3>Tirar esta caixa da NF?</h3><p><b class="mono">' + esc(DESF) + '</b> · ' + esc(pref(u.sku)) + '<br>NF ' + esc(n.nf) + ' · ' + esc(n.loja) + '</p>' +
+    '<p class="muted">A caixa volta para EM ESTOQUE e a NF fica incompleta: depois é só bipar a caixa certa.</p>' +
+    '<div class="row"><button class="btn claro" id="xDesfNao">Cancelar</button><button class="btn verm" id="xDesfSim" style="flex:1">Desfazer caixa</button></div>';
+  $('xDesfNao').onclick = () => { DESF = null; desfRender(); };
+  $('xDesfSim').onclick = () => {
+    const s = DESF, uu = S.un[s]; DESF = null;
+    if (!uu || uu.s !== ST.EXP) { desfRender(); return msg('av', 'Nada a desfazer', s + ' já não está expedida'); }
+    const nf = uu.nf;
+    enfileirar({ tipo: 'desfazerCaixa', serial: s });
+    const i = ULTIMAS.lastIndexOf(s); if (i >= 0) ULTIMAS.splice(i, 1);
+    render(); msg('av', 'Desfeito: ' + s, 'Saiu da NF ' + nf + ' e voltou para EM ESTOQUE');
+  };
+}
+$('rLin').addEventListener('click', e => {
+  const b = e.target.closest('[data-desf]'); if (!b || !pode('expedicao')) return;
+  DESF = b.dataset.desf; desfRender();
+  $('xDesf').scrollIntoView({ behavior: 'smooth', block: 'center' });
+});
 $('xPend').onclick = () => {
   const nfs = nfsRom(), inc = nfs.filter(n => n.etq && !completo(n)), nao = nfs.filter(n => !n.etq);
   const canc = S.rom.ordem.map(k => S.rom.nfs[k]).filter(n => n.canc);
@@ -1117,12 +1150,13 @@ function render() {
     const k = cxNF[u.chave] = cxNF[u.chave] || {}; (k[u.sku] = k[u.sku] || []).push(s); });
   // nº do pedido no Bling (vem da planilha: Ref. Pedido do XML ou, no marketplace, a aba PEDIDOS_LOJA)
   const pedTxt = n => n.ped ? '<div class="ped">Ped. ' + esc(n.ped) + '</div>' : n.pedLoja ? '<div class="ped esp" title="Pedido ' + esc(n.pedLoja) + ' na loja">Ped. aguardando</div>' : '';
+  desfRender();
   $('rLin').innerHTML = todas.map(n => {
     if (n.canc) return '<tr class="canc"><td><b>' + esc(n.nf) + '</b><div>' + esc(n.loja) + '</div>' + pedTxt(n) + '</td><td colspan="3"><b>CANCELADA</b> — não expedir</td></tr>';
     const p = progresso(n), done = completo(n), ab = ABERTA === n.chave && !done, bx = cxNF[n.chave] || {};
     return '<tr class="' + (done ? 'feita' : ab ? 'aberta' : '') + '"><td><b>' + esc(n.nf) + '</b><div class="muted">' + esc(n.loja) + '</div>' + pedTxt(n) + '<span class="tag t-cz">' + (n.envio ? 'ML' : 'DANFE') + '</span></td>' +
       '<td>' + p.map(x => '<div><b>' + esc(x.serial ? pref(x.sku) : x.sku) + '</b> × ' + fmtQ(x.qtd) + (x.serial ? '' : ' <span class="tag t-av">pela NF</span>') +
-        (x.serial && bx[x.sku] ? bx[x.sku].sort().map(s => '<div class="sers">' + esc(s) + '</div>').join('') : '') + '</div>').join('') + '</td>' +
+        (bx[x.sku] ? bx[x.sku].sort().map(s => '<button type="button" class="sers" data-desf="' + esc(s) + '">' + esc(s) + '<span class="x">✕</span></button>').join('') : '') + '</div>').join('') + '</td>' +
       '<td class="ck">' + (n.etq ? '✅' : '⬜') + '</td><td class="ck">' + (done ? '✅' : p.some(x => x.serial && x.feito) ? p.filter(x => x.serial).map(x => x.feito + '/' + fmtQ(x.qtd)).join(' ') : '⬜') + '</td></tr>';
   }).join('');
 
