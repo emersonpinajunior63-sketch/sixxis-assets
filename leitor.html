@@ -69,10 +69,6 @@
   .mono { font-family: ui-monospace, monospace; font-size: 12.5px; word-break: break-all; }
   .ped { font-size: 12.5px; font-weight: 600; color: var(--esc); margin-top: 2px; } .ped.esp { font-weight: 400; color: #8a6200; }
   .sers { font-family: ui-monospace, monospace; font-size: 12px; color: var(--ok); font-weight: 600; margin-top: 2px; }
-  /* desfazer uma caixa específica (24/11/2026): o serial embaixo da NF vira botão */
-  button.sers { display: block; border: 1px solid #cfe5d2; background: #f3faf4; border-radius: 6px; padding: 4px 6px; text-align: left; cursor: pointer; }
-  button.sers .x { color: var(--er); font-weight: 700; margin-left: 6px; }
-  #xDesf { border: 2px solid var(--er); background: #fff6f6; }
   .muted { color: #6b7480; font-size: 13px; }
   ul.l { list-style: none; padding: 0; margin: 0; }
   ul.l li { padding: 6px 0; border-bottom: 1px solid #eef0f3; font-size: 13.5px; }
@@ -103,6 +99,8 @@
   .confirma p { margin: 0 0 8px; font-size: 15px; }
   .semi { background: #fde4e4; color: var(--er); border-radius: 4px; padding: 1px 6px; font-size: 11px; font-weight: 700; }
   .menu button .badge { margin-left: auto; background: var(--er); color: #fff; border-radius: 999px; padding: 2px 9px; font-size: 13px; }
+  /* saída por pedido, venda sem NF (25/11/2026) */
+  .sx-x { border: 0; background: transparent; color: var(--er); font-size: 20px; line-height: 1; padding: 0 4px; }
 </style>
 </head>
 <body>
@@ -135,6 +133,7 @@
   <section id="t-menu" class="hidden">
     <div class="menu">
       <button data-ir="expedicao"><span class="ic">🚚</span><span>EXPEDIÇÃO<small>Romaneio do dia: etiqueta ou DANFE + produto</small></span></button>
+      <button data-ir="saida"><span class="ic">🧾</span><span>SAÍDA POR PEDIDO<small>Venda sem NF: amarrar a caixa ao pedido</small></span></button>
       <button data-ir="inventario"><span class="ic">📋</span><span>INVENTÁRIO<small>Contar o que está no depósito</small></span></button>
       <button data-ir="entrada"><span class="ic">📦</span><span>ENTRADA<small>Conferir as caixas batizadas</small></span></button>
       <button data-ir="devolucao"><span class="ic">↩️</span><span>DEVOLUÇÕES<small>Bipar a caixa que voltou</small></span><span class="badge hidden" id="devBadge"></span></button>
@@ -168,7 +167,6 @@
       <div id="rImpr" class="muted"></div>
       <p class="muted fat" style="margin:6px 0 0">Lote = XMLs do Bling (.xml ou .zip) + PDF da etiqueta casada, tudo de uma vez.</p>
     </div>
-    <div class="card hidden" id="xDesf"></div>
     <div class="card" style="padding:4px 8px">
       <table><thead><tr><th>NF · loja</th><th>Produto</th><th class="ck">Etiq.</th><th class="ck">Prod.</th></tr></thead><tbody id="rLin"></tbody></table>
       <p class="muted hidden" id="rVazio" style="padding:8px"></p>
@@ -178,8 +176,20 @@
       <button class="btn claro" id="xPend">Ver pendências</button>
       <button class="btn claro fat" id="xNovoDia">Novo dia</button>
     </div>
-    <p class="muted">Bipou a caixa errada? Toque no serial dela, embaixo da NF, para tirar só aquela caixa (funciona em qualquer aparelho, até o Novo dia).</p>
     <div class="card hidden" id="xResumo"></div>
+  </section>
+
+  <!-- SAÍDA POR PEDIDO, venda sem NF (25/11/2026) -->
+  <section id="t-saida" class="hidden">
+    <div class="card">
+      <h3>Venda sem NF</h3>
+      <p class="muted">Amarra a caixa batizada ao nº do pedido do Bling. Venda com NF sai pela Expedição.</p>
+      <label class="f" for="pLoja">Filial do pedido</label>
+      <select id="pLoja"></select>
+      <label class="f" for="pNum">Nº do pedido no Bling</label>
+      <div class="row" style="margin-top:0"><input class="txt" id="pNum" inputmode="numeric" placeholder="Ex.: 4100" autocomplete="off"><button class="btn" id="pBuscar">Buscar</button></div>
+      <div id="pRes"></div>
+    </div>
   </section>
 
   <!-- INVENTÁRIO -->
@@ -242,8 +252,8 @@
     </div>
     <div class="card"><h3>Estoque por SKU (seriais)</h3><div id="sTab"></div></div>
     <div class="card">
-      <h3>Procurar serial ou NF</h3>
-      <div class="row"><input class="txt" id="sBusca" placeholder="Ex.: LIFEPT-000123 ou 3948" autocapitalize="characters"></div>
+      <h3>Procurar serial, NF ou pedido</h3>
+      <div class="row"><input class="txt" id="sBusca" placeholder="Ex.: LIFEPT-000123, 3948 ou 4100" autocapitalize="characters"></div>
       <div id="sRes"></div>
     </div>
     <div class="card"><h3>Últimas bipagens</h3><ul class="l" id="sLog"></ul></div>
@@ -298,7 +308,7 @@
 // Endereço /exec da implantação do projeto do Painel com acesso "Qualquer pessoa".
 const API_URL = 'https://script.google.com/macros/s/AKfycbxoa2FBttPSApIpOeLxBMWcg1tRoXlzQk5AEbdI1fBE7j2pJ9yeWC6-Zm0pifDcRkW8/exec';
 const POLL_MS = 20000;
-const TITULOS = { menu: 'Leitor Sixxis', expedicao: 'Expedição', inventario: 'Inventário', entrada: 'Entrada', devolucao: 'Devoluções', situacao: 'Situação', batismo: 'Batismo' };
+const TITULOS = { menu: 'Leitor Sixxis', expedicao: 'Expedição', saida: 'Saída por pedido', inventario: 'Inventário', entrada: 'Entrada', devolucao: 'Devoluções', situacao: 'Situação', batismo: 'Batismo' };
 const ST = { BAT: 'BATIZADA', EST: 'EM ESTOQUE', EXP: 'EXPEDIDA', NL: 'NÃO LOCALIZADA', BX: 'BAIXADA' };
 
 const $ = id => document.getElementById(id);
@@ -355,19 +365,22 @@ function normalizar(r) {
   (r.mapa || []).forEach(m => { s.mapa[m[0]] = { prefixo: m[1], desc: m[2] }; s.porPref[m[1]] = m[0]; });
   // seminovos (18/11/2026): semi = SKU original → SKU seminovo · deSemi = SKU seminovo → SKU original
   s.semi = r.semi || {}; s.deSemi = {}; Object.keys(s.semi).forEach(k => { s.deSemi[s.semi[k]] = k; });
-  (r.un || []).forEach(u => { s.un[u[0]] = { sku: u[1], n: u[2], b: u[3], s: u[4], nf: u[5], chave: u[6] }; });
+  // ped (25/11/2026): '4100 · AR BRASIL' quando a caixa saiu por pedido, sem NF
+  (r.un || []).forEach(u => { s.un[u[0]] = { sku: u[1], n: u[2], b: u[3], s: u[4], nf: u[5], chave: u[6], ped: u[7] || '' }; });
   s.rom = { id: r.rom.id, lotes: r.rom.lotes || [], nfs: {}, ordem: [], envio: {} };
   (r.rom.nfs || []).forEach(n => { s.rom.nfs[n.chave] = n; s.rom.ordem.push(n.chave); if (n.envio) s.rom.envio[n.envio] = n.chave; });
   s.inv = r.inv ? { id: r.inv.id, ini: r.inv.ini, b: {}, ord: r.inv.ord.slice() } : null;
   if (s.inv) s.inv.ord.forEach(x => s.inv.b[x] = 1);
   return s;
 }
+// documento da caixa expedida, para as mensagens: 'NF 4635' ou 'pedido 4100 · AR BRASIL (sem NF)'
+const docU = u => !u ? '' : u.nf ? 'NF ' + u.nf : u.ped ? 'pedido ' + u.ped + ' (sem NF)' : '';
 function aplicar(ev) {   // efeito local de uma bipagem (na hora e de novo depois de recarregar, enquanto não confirmada)
   const u = ev.serial && S.un[ev.serial], n = ev.chave && S.rom.nfs[ev.chave];
   if (ev.tipo === 'entrada' && u && u.s !== ST.EXP) u.s = ST.EST;
   else if (ev.tipo === 'etiqueta' && n) n.etq = true;
-  else if (ev.tipo === 'caixa' && u && n) { u.s = ST.EXP; u.chave = n.chave; u.nf = n.nf; n.etq = true; }
-  else if (ev.tipo === 'desfazerCaixa' && u) { u.s = ST.EST; u.chave = ''; u.nf = ''; }
+  else if (ev.tipo === 'caixa' && u && n) { u.s = ST.EXP; u.chave = n.chave; u.nf = n.nf; u.ped = ''; n.etq = true; }
+  else if (ev.tipo === 'desfazerCaixa' && u) { u.s = ST.EST; u.chave = ''; u.nf = ''; u.ped = ''; }
   else if (ev.tipo === 'inv') { if (!S.inv) S.inv = { id: '', ini: agoraTxt(), b: {}, ord: [] }; if (!S.inv.b[ev.serial]) { S.inv.b[ev.serial] = 1; S.inv.ord.push(ev.serial); } }
   else if (ev.tipo === 'desfazerInv' && S.inv) { delete S.inv.b[ev.serial]; const i = S.inv.ord.lastIndexOf(ev.serial); if (i >= 0) S.inv.ord.splice(i, 1); }
 }
@@ -432,7 +445,7 @@ function semAcesso(t) { mostrarLogin(t); }
 function mostrarLogin(t) {
   try { if (ligada) desligarCamera(); } catch (e) {}
   S = null; TELA = 'menu'; ABERTA = null; ULTIMAS = [];
-  ['t-inicio', 't-menu', 't-expedicao', 't-inventario', 't-entrada', 't-devolucao', 't-situacao', 't-batismo', 'leitura'].forEach(id => $(id).classList.add('hidden'));
+  ['t-inicio', 't-menu', 't-expedicao', 't-saida', 't-inventario', 't-entrada', 't-devolucao', 't-situacao', 't-batismo', 'leitura'].forEach(id => $(id).classList.add('hidden'));
   $('hVoltar').classList.add('hidden'); $('hTit').textContent = TITULOS.menu; $('hQuem').textContent = '';
   $('t-login').classList.remove('hidden');
   $('lgMsg').textContent = t || ''; $('lgMsg').classList.toggle('hidden', !t);
@@ -505,17 +518,18 @@ function ir(t) {
   if (!S) return;
   if (t !== 'menu' && !podeTela(t)) return;
   TELA = t;
-  ['inicio', 'login', 'menu', 'expedicao', 'inventario', 'entrada', 'devolucao', 'situacao', 'batismo'].forEach(x => $('t-' + x).classList.toggle('hidden', x !== t));
-  $('leitura').classList.toggle('hidden', !['expedicao', 'inventario', 'entrada', 'devolucao', 'situacao'].includes(t));
+  ['inicio', 'login', 'menu', 'expedicao', 'saida', 'inventario', 'entrada', 'devolucao', 'situacao', 'batismo'].forEach(x => $('t-' + x).classList.toggle('hidden', x !== t));
+  $('leitura').classList.toggle('hidden', !['expedicao', 'saida', 'inventario', 'entrada', 'devolucao', 'situacao'].includes(t));
   $('hVoltar').classList.toggle('hidden', t === 'menu');
   $('hTit').textContent = TITULOS[t];
-  if (t !== 'menu') msg('', 'Pronto.', { entrada: 'Bipe as caixas do batismo.', expedicao: 'Bipe a etiqueta (ou a DANFE) e depois o produto.', inventario: 'Bipe as caixas do depósito.', devolucao: 'Bipe a caixa que voltou.', situacao: 'Bipe uma caixa para ver a história dela.' }[t] || '');
+  if (t !== 'menu') msg('', 'Pronto.', { entrada: 'Bipe as caixas do batismo.', expedicao: 'Bipe a etiqueta (ou a DANFE) e depois o produto.', saida: 'Busque o pedido e depois bipe as caixas.', inventario: 'Bipe as caixas do depósito.', devolucao: 'Bipe a caixa que voltou.', situacao: 'Bipe uma caixa para ver a história dela.' }[t] || '');
   window.scrollTo(0, 0);
   if (t === 'batismo') preLib('XLSX');
   if (t === 'devolucao') devAbrir();
+  if (t === 'saida') saiAbrir();
   render();
 }
-const podeTela = t => t === 'batismo' ? faturista() : t === 'devolucao' ? pode('expedicao') || faturista() : pode(t);
+const podeTela = t => t === 'batismo' ? faturista() : t === 'devolucao' ? pode('expedicao') || faturista() : t === 'saida' ? pode('saida_pedido') || faturista() : pode(t);
 document.querySelectorAll('[data-ir]').forEach(b => b.onclick = () => ir(b.dataset.ir));
 $('hVoltar').onclick = () => ir('menu');
 
@@ -525,6 +539,7 @@ function processar(txt) {
   if (TELA === 'entrada') entrada(c);
   else if (TELA === 'expedicao') expedicao(c);
   else if (TELA === 'inventario') inventario(c);
+  else if (TELA === 'saida') { saida(c); return; }
   else if (TELA === 'devolucao') { devolucao(c); return; }
   else if (TELA === 'situacao') { if (c.tipo === 'serial') { $('rastIn').value = c.v; rastrear(c.v); } else msg('er', 'Isso não é o serial de uma caixa', c.v); return; }
   else return;
@@ -588,15 +603,15 @@ function expedicao(c) {
   const n = ABERTA && S.rom.nfs[ABERTA];
   const semN = n && !n.canc && !temSerial(u.sku) && progresso(n).some(p => p.sku === u.sku && cabe(p));   // seminova com serial numa NF já conferida pela nota
   if (!n || n.canc || (completo(n) && !semN)) {
-    if (u.s === ST.EXP) return msg('er', 'Caixa já expedida', c.v + ' · NF ' + u.nf);
+    if (u.s === ST.EXP) return msg('er', 'Caixa já expedida', c.v + ' · ' + docU(u));
     if (u.s === ST.BAT) return msg('er', 'Caixa não conferida na entrada', c.v + ' — está como BATIZADA');
     if (u.s === ST.NL) return msg('er', 'Caixa marcada como não localizada', 'Dê entrada nela de novo antes de expedir');
     const pend = nfsRom().filter(x => (!completo(x) || !temSerial(u.sku)) && progresso(x).some(p => p.sku === u.sku && cabe(p)));
-    if (!pend.length) return msg('er', 'Produto órfão', 'Nenhuma NF pendente do romaneio pede ' + pref(u.sku) + ' (' + u.sku + ')');
+    if (!pend.length) return msg('er', 'Produto órfão', 'Nenhuma NF pendente do romaneio pede ' + pref(u.sku) + ' (' + u.sku + ')' + (podeTela('saida') ? ' · venda sem NF? Use a Saída por pedido' : ''));
     ESPERA = { serial: c.v, ate: Date.now() + ESPERA_MS };
     return msg('av', 'Caixa ' + c.v + ' lida — agora bipe a etiqueta dela', 'Ou a DANFE. A caixa entra sozinha na NF (vale por 1 minuto).');
   }
-  if (u.s === ST.EXP) return u.chave === n.chave ? msg('av', 'Esta caixa já está nesta NF', c.v) : msg('er', 'Caixa já expedida em outra NF', c.v + ' · NF ' + u.nf);
+  if (u.s === ST.EXP) return u.chave === n.chave ? msg('av', 'Esta caixa já está nesta NF', c.v) : msg('er', 'Caixa já expedida em outro documento', c.v + ' · ' + docU(u));
   if (u.s === ST.BAT) return msg('er', 'Caixa não conferida na entrada', c.v + ' — está como BATIZADA');
   if (u.s === ST.NL) return msg('er', 'Caixa marcada como não localizada', 'Dê entrada nela de novo antes de expedir');
   const p = progresso(n).find(x => x.sku === u.sku);
@@ -616,33 +631,6 @@ $('xDesfazer').onclick = () => {
   const s = ULTIMAS.pop(); if (!s) return msg('av', 'Nada para desfazer neste aparelho');
   enfileirar({ tipo: 'desfazerCaixa', serial: s }); render(); msg('av', 'Desfeito: ' + s, 'Voltou para EM ESTOQUE');
 };
-// Desfazer uma caixa específica (24/11/2026): toca no serial embaixo da NF → confirma → volta para EM ESTOQUE.
-// Vale em qualquer aparelho (não depende da lista "últimas" deste celular). A planilha só aceita enquanto a NF
-// estiver no romaneio aberto (antes do Novo dia).
-let DESF = null;
-function desfRender() {
-  const box = $('xDesf');
-  const u = DESF && S.un[DESF], n = u && u.chave && S.rom.nfs[u.chave];
-  if (!DESF || !u || u.s !== ST.EXP || !n) { DESF = null; box.classList.add('hidden'); box.innerHTML = ''; return; }
-  box.classList.remove('hidden');
-  box.innerHTML = '<h3>Tirar esta caixa da NF?</h3><p><b class="mono">' + esc(DESF) + '</b> · ' + esc(pref(u.sku)) + '<br>NF ' + esc(n.nf) + ' · ' + esc(n.loja) + '</p>' +
-    '<p class="muted">A caixa volta para EM ESTOQUE e a NF fica incompleta: depois é só bipar a caixa certa.</p>' +
-    '<div class="row"><button class="btn claro" id="xDesfNao">Cancelar</button><button class="btn verm" id="xDesfSim" style="flex:1">Desfazer caixa</button></div>';
-  $('xDesfNao').onclick = () => { DESF = null; desfRender(); };
-  $('xDesfSim').onclick = () => {
-    const s = DESF, uu = S.un[s]; DESF = null;
-    if (!uu || uu.s !== ST.EXP) { desfRender(); return msg('av', 'Nada a desfazer', s + ' já não está expedida'); }
-    const nf = uu.nf;
-    enfileirar({ tipo: 'desfazerCaixa', serial: s });
-    const i = ULTIMAS.lastIndexOf(s); if (i >= 0) ULTIMAS.splice(i, 1);
-    render(); msg('av', 'Desfeito: ' + s, 'Saiu da NF ' + nf + ' e voltou para EM ESTOQUE');
-  };
-}
-$('rLin').addEventListener('click', e => {
-  const b = e.target.closest('[data-desf]'); if (!b || !pode('expedicao')) return;
-  DESF = b.dataset.desf; desfRender();
-  $('xDesf').scrollIntoView({ behavior: 'smooth', block: 'center' });
-});
 $('xPend').onclick = () => {
   const nfs = nfsRom(), inc = nfs.filter(n => n.etq && !completo(n)), nao = nfs.filter(n => !n.etq);
   const canc = S.rom.ordem.map(k => S.rom.nfs[k]).filter(n => n.canc);
@@ -758,6 +746,140 @@ $('rArq').onchange = async function () {
   } catch (e) { msg('er', 'Não consegui adicionar o lote', e.message); }
 };
 
+// ================= SAÍDA POR PEDIDO, venda sem NF (25/11/2026) =================
+// Filial + nº do pedido do Bling → o servidor (SaidaPedido.gs) procura o pedido na aba da loja e devolve os produtos.
+// As caixas bipadas ficam numa lista nesta tela; ao confirmar (dois toques) vão todas de uma vez: EXPEDIDA, amarrada
+// ao pedido ("PED|FILIAL|nº"), sem NF. Precisa de internet: não entra na fila das bipagens.
+let SAI = null;   // { d (resposta do consultar), sel: [{ serial, sku }], etapa: buscando|bipar|bloqueio|enviando|feito|erro, erro, res, ult }
+function saiAbrir() {
+  const sel = $('pLoja'), lojas = Object.keys(LOJA_CNPJ).map(k => LOJA_CNPJ[k]);
+  if (!sel.options.length) { sel.innerHTML = lojas.map(l => '<option value="' + esc(l) + '">' + esc(l) + '</option>').join(''); sel.value = ls.get('ldr_saiLoja', 'AR BRASIL'); }
+  saiRender();
+}
+$('pLoja').onchange = function () { ls.set('ldr_saiLoja', this.value); };
+$('pBuscar').onclick = () => saiBuscar();
+$('pNum').onkeydown = e => { if (e.key === 'Enter') saiBuscar(); };
+async function saiBuscar() {
+  const loja = $('pLoja').value, ped = $('pNum').value.replace(/\D/g, '');
+  if (!ped) return msg('er', 'Digite o nº do pedido do Bling');
+  if (SAI && SAI.sel && SAI.sel.length && SAI.etapa === 'bipar' && SAI.d.ped !== ped) return msg('av', 'Termine o pedido ' + SAI.d.ped + ' primeiro', 'Confirme a saída ou cancele as caixas da lista');
+  SAI = { etapa: 'buscando', sel: [] }; saiRender(); msg('', 'Buscando o pedido ' + ped + '…');
+  try {
+    const d = await api('saidaPedido', { op: 'consultar', loja, pedido: ped });
+    SAI = { d, sel: [], etapa: d.bloqueio ? 'bloqueio' : 'bipar' };
+    if (d.bloqueio) msg('er', 'Pedido ' + ped + ' — não sai por aqui', d.bloqueio);
+    else if (!d.achou) msg('av', 'Pedido ' + ped + ' ainda não está na aba ' + loja, 'Dá para registrar sem conferir os produtos');
+    else msg('ok', 'Pedido ' + ped + ' · ' + loja, 'Agora bipe as caixas');
+  } catch (e) {
+    if (e.semAcesso) return semAcesso(e.message);
+    SAI = { etapa: 'erro', erro: e.message, sel: [] }; msg('er', 'Não foi possível', e.message);
+  }
+  saiRender();
+}
+// caixas do item do pedido: as já amarradas + as da lista desta tela
+const saiConta = sku => (SAI.d.caixas || []).filter(c => c.sku === sku).length + SAI.sel.filter(x => x.sku === sku).length;
+function saida(c) {
+  if (!podeTela('saida')) return;
+  if (c.tipo !== 'serial') return msg('er', 'Isso não é o serial de uma caixa', c.tipo === 'chave' || c.tipo === 'envio' ? 'Venda com NF sai pela Expedição' : c.v);
+  if (!SAI || !SAI.d || SAI.etapa !== 'bipar') return msg('av', 'Primeiro busque o pedido', 'Escolha a filial, digite o nº do pedido e toque em Buscar');
+  if (SAI.sel.some(x => x.serial === c.v)) { if (SAI.ult === c.v) return; return msg('av', 'Já está na lista', c.v); }   // câmera relendo a mesma caixa
+  const u = S.un[c.v], d = SAI.d;
+  if (!u) return msg('er', 'Serial não cadastrado', c.v + ' — se o batismo é novo, aguarde a tela atualizar');
+  if (u.s === ST.EXP) return msg('er', 'Caixa já expedida', c.v + ' · ' + docU(u));
+  if (u.s === ST.BAT) return msg('er', 'Caixa não conferida na entrada', c.v + ' — está como BATIZADA');
+  if (u.s === ST.NL) return msg('er', 'Caixa marcada como não localizada', 'Dê entrada nela de novo antes de expedir');
+  if (u.s !== ST.EST) return msg('er', 'Caixa ' + u.s, c.v + ' não está no estoque');
+  if (d.achou) {
+    const it = d.itens.find(i => i.sku === u.sku);
+    if (!it) {
+      const orig = semiDe(u.sku), semiDele = S.semi[u.sku];
+      if (orig && d.itens.some(i => i.sku === orig)) return msg('er', 'Esta caixa é SEMINOVA', c.v + ' está em ' + u.sku + ' · o pedido pede o novo (' + orig + ')');
+      if (semiDele && d.itens.some(i => i.sku === semiDele)) return msg('er', 'Esta caixa é NOVA', c.v + ' é ' + u.sku + ' · o pedido pede a seminova (' + semiDele + ')');
+      return msg('er', 'Produto errado para este pedido', c.v + ' é ' + u.sku + ' · o pedido tem ' + d.itens.map(i => i.sku).join(', '));
+    }
+    if (saiConta(u.sku) >= it.qtd) return msg('er', 'Quantidade já completa', u.sku + ': ' + fmtQ(it.qtd) + ' de ' + fmtQ(it.qtd));
+    SAI.sel.push({ serial: c.v, sku: u.sku }); SAI.ult = c.v;
+    msg('ok', c.v, u.sku + (semiDe(u.sku) ? ' (seminova)' : '') + ' · ' + saiConta(u.sku) + ' de ' + fmtQ(it.qtd) + ' · confirme no fim');
+  } else {
+    SAI.sel.push({ serial: c.v, sku: u.sku }); SAI.ult = c.v;
+    msg('av', c.v, u.sku + ' · sem conferir o pedido (ele ainda não está na aba da loja)');
+  }
+  saiRender();
+}
+function saiRender() {
+  const box = $('pRes'); if (!box) return;
+  if (!SAI) { box.innerHTML = ''; return; }
+  if (SAI.etapa === 'buscando') { box.innerHTML = '<p class="muted">Buscando o pedido…</p>'; return; }
+  if (SAI.etapa === 'erro') { box.innerHTML = '<p class="tag t-er">' + esc(SAI.erro) + '</p>'; return; }
+  const d = SAI.d, sit = d.situacao;
+  let h = '<h4>Pedido</h4><p><b>' + esc(d.ped) + '</b> · ' + esc(d.loja) + (d.data ? ' · ' + esc(d.data) : '') +
+    (sit ? ' <span class="tag ' + (/^atendido$/i.test(sit) ? 't-ok' : /^(cancel|devol)/i.test(sit) ? 't-er' : 't-av') + '">' + esc(sit) + '</span>' : '') +
+    (d.tipo ? ' <span class="tag t-cz">' + esc(d.tipo) + '</span>' : '') + '</p>';
+  if (d.bloqueio) h += '<div class="aviso">' + esc(d.bloqueio) + '</div>';
+  else if (d.aviso) h += '<div class="aviso">' + esc(d.aviso) + '</div>';
+  if (d.itens.length) h += '<table><thead><tr><th>Produto</th><th class="ck">Caixas</th></tr></thead><tbody>' + d.itens.map(it => {
+    const n = saiConta(it.sku), ok = n >= it.qtd;
+    return '<tr' + (it.serial && ok ? ' class="feita"' : '') + '><td><b>' + esc(it.serial ? pref(semiDe(it.sku) || it.sku) : it.sku) + '</b>' + (it.semi ? ' <span class="semi">SEMINOVA</span>' : '') +
+      '<div class="muted">' + esc(it.desc || it.sku) + (it.serial ? '' : ' · sem serial') + '</div></td><td class="ck">' + (it.serial ? n + '/' + fmtQ(it.qtd) : '<span class="muted">—</span>') + '</td></tr>';
+  }).join('') + '</tbody></table>';
+  if (SAI.etapa === 'feito') {
+    const r = SAI.res;
+    box.innerHTML = h + '<div class="aviso">✅ ' + r.n + ' caixa(s) saíram no pedido <b>' + esc(r.ped) + '</b> · ' + esc(r.loja) + ' (sem NF).</div>' +
+      '<div class="row"><button class="btn" data-sx="prox" style="flex:1">Próximo pedido</button></div>';
+    return;
+  }
+  if (SAI.sel.length) h += '<h4>Caixas desta saída (' + SAI.sel.length + ')</h4><ul class="l">' + SAI.sel.map((x, i) =>
+    '<li><span class="mono">' + esc(x.serial) + '</span> · ' + esc(x.sku) + (semiDe(x.sku) ? ' <span class="semi">SEMINOVA</span>' : '') +
+    (SAI.etapa === 'bipar' ? ' <button class="sx-x" data-sxtira="' + i + '" aria-label="Tirar da lista">×</button>' : '') + '</li>').join('') + '</ul>';
+  else if (SAI.etapa === 'bipar') h += '<p class="muted">Bipe as caixas (câmera acima ou leitor Bluetooth). Elas só saem do estoque quando você confirmar.</p>';
+  if ((d.caixas || []).length) h += '<h4>Já saíram neste pedido (' + d.caixas.length + ')</h4><ul class="l">' + d.caixas.map(x =>
+    '<li><span class="mono">' + esc(x.serial) + '</span> · ' + esc(x.sku) + '<br><span class="muted">' + esc(x.em) + (x.por ? ' · ' + esc(x.por) : '') + '</span>' +
+    ' <button class="btn claro" data-sxdesf="' + esc(x.serial) + '" style="padding:4px 10px;font-size:13px">Desfazer</button></li>').join('') + '</ul>';
+  if (SAI.etapa === 'enviando') h += '<p class="muted">Enviando para a planilha…</p>';
+  else if (SAI.etapa === 'bipar') h += '<div class="row"><button class="btn claro" data-sx="cancelar">Cancelar</button>' +
+    '<button class="btn verm" data-sx="confirmar" style="flex:1"' + (SAI.sel.length ? '' : ' disabled') + '>Confirmar saída' + (SAI.sel.length ? ' (' + SAI.sel.length + ')' : '') + '</button></div>';
+  else if (SAI.etapa === 'bloqueio') h += '<div class="row"><button class="btn claro" data-sx="cancelar">Fechar</button></div>';
+  box.innerHTML = h;
+}
+$('pRes').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b || b.disabled || !SAI) return;
+  if (b.dataset.sxtira != null) { SAI.sel.splice(Number(b.dataset.sxtira), 1); SAI.ult = ''; saiRender(); msg('', 'Caixa tirada da lista'); return; }
+  if (b.dataset.sxdesf) { const s = b.dataset.sxdesf; return confirmar(b, 'Desfazer', () => saiDesfazer(s)); }
+  const a = b.dataset.sx;
+  if (a === 'confirmar') confirmar(b, 'Confirmar saída (' + SAI.sel.length + ')', saiEnviar);
+  else if (a === 'cancelar' || a === 'prox') { SAI = null; if (a === 'prox') $('pNum').value = ''; saiRender(); msg('', 'Pronto.', 'Busque o pedido e depois bipe as caixas.'); if (a === 'prox') $('pNum').focus(); }
+});
+async function saiEnviar() {
+  if (!SAI || SAI.etapa !== 'bipar' || !SAI.sel.length) return;
+  const d = SAI.d; SAI.etapa = 'enviando'; saiRender();
+  try {
+    await esperarFila();
+    const r = await api('saidaPedido', { op: 'registrar', loja: d.loja, pedido: d.ped, seriais: SAI.sel.map(x => x.serial), semConferir: !d.achou, confirmar: true });
+    SAI.etapa = 'feito'; SAI.res = r;
+    msg('ok', '✅ Pedido ' + r.ped + ': ' + r.n + ' caixa(s) saíram', r.loja + ' · sem NF');
+    carregar(true);
+  } catch (e) {
+    if (e.semAcesso) return semAcesso(e.message);
+    SAI.etapa = 'bipar'; msg('er', 'A saída NÃO foi registrada', e.message);
+  }
+  saiRender();
+}
+async function saiDesfazer(serial) {
+  if (!SAI || !SAI.d) return;
+  const d = SAI.d;
+  try {
+    await api('saidaPedido', { op: 'desfazer', serial });
+    msg('av', 'Desfeito: ' + serial, 'Voltou para EM ESTOQUE');
+    carregar(true);
+    const sel = SAI.sel.slice(), nd = await api('saidaPedido', { op: 'consultar', loja: d.loja, pedido: d.ped });
+    SAI = { d: nd, sel: nd.bloqueio ? [] : sel, etapa: nd.bloqueio ? 'bloqueio' : 'bipar' };
+  } catch (e) {
+    if (e.semAcesso) return semAcesso(e.message);
+    msg('er', 'Não foi possível desfazer', e.message);
+  }
+  saiRender();
+}
+
 // ================= INVENTÁRIO =================
 function inventario(c) {
   if (!pode('inventario')) return;
@@ -766,7 +888,7 @@ function inventario(c) {
   if (!u) return msg('er', 'Serial não cadastrado', c.v);
   if (S.inv && S.inv.b[c.v]) return msg('av', 'Já contada', c.v);
   enfileirar({ tipo: 'inv', serial: c.v });
-  if (u.s !== ST.EST) return msg('av', c.v + ' — sistema diz ' + u.s, u.s === ST.EXP ? 'Expedida na NF ' + u.nf + ', mas está no depósito' : 'Vai aparecer como sobra');
+  if (u.s !== ST.EST) return msg('av', c.v + ' — sistema diz ' + u.s, u.s === ST.EXP ? 'Expedida (' + docU(u) + '), mas está no depósito' : 'Vai aparecer como sobra');
   const f = $('iSku').value;
   if (semiDe(u.sku)) return msg('av', c.v + ' é SEMINOVA', 'Está em ' + u.sku + (f && f !== u.sku ? ' · não conta como ' + f : '') + ' · separe das novas');
   if (f && f !== u.sku) return msg('av', c.v + ' é de outro produto', u.sku + ' · não conta como ' + f);
@@ -790,7 +912,7 @@ $('iVer').onclick = () => {
   }
   box.innerHTML = '<h3>Listas do inventário</h3>' +
     (r.falt.length ? '<p class="muted">Faltando — o sistema diz EM ESTOQUE e ainda não foram bipadas</p><ul class="l">' + r.falt.sort().map(s => '<li class="mono">' + s + '</li>').join('') + '</ul>' : '<p>✅ Nada faltando.</p>') +
-    (r.sobra.length ? '<p class="muted">Sobrando — bipadas no depósito, mas o sistema diz outra coisa</p><ul class="l">' + r.sobra.map(s => '<li><span class="mono">' + s + '</span> — ' + S.un[s].s + (S.un[s].nf ? ' NF ' + S.un[s].nf : '') + '</li>').join('') + '</ul>' : '');
+    (r.sobra.length ? '<p class="muted">Sobrando — bipadas no depósito, mas o sistema diz outra coisa</p><ul class="l">' + r.sobra.map(s => '<li><span class="mono">' + s + '</span> — ' + S.un[s].s + (docU(S.un[s]) ? ' ' + esc(docU(S.un[s])) : '') + '</li>').join('') + '</ul>' : '');
 };
 $('iEncerrar').onclick = function () {
   confirmar(this, 'Encerrar inventário', async () => {
@@ -812,7 +934,7 @@ function entrada(c) {
   if (u.sku !== b.sku) return semiDe(u.sku) === b.sku ? msg('er', 'Esta caixa é SEMINOVA', c.v + ' voltou de devolução e está em ' + u.sku + ' · não conta como nova')
     : msg('er', 'Caixa de outro produto', c.v + ' é ' + u.sku + ', o batismo é ' + b.sku);
   if (u.s === ST.EST) return msg('av', 'Já conferida', c.v);
-  if (u.s === ST.EXP) return msg('er', 'Esta caixa já foi expedida', c.v + ' · NF ' + u.nf);
+  if (u.s === ST.EXP) return msg('er', 'Esta caixa já foi expedida', c.v + ' · ' + docU(u));
   const bU = S.bat.find(x => x.id === u.b), novaMont = bU && bU.mont && (u.s === ST.BAT || u.s === ST.NL);
   enfileirar({ tipo: 'entrada', serial: c.v, batismo: b.id, skuBatismo: b.sku });
   if (u.b !== b.id) return msg('av', 'Conferida, mas é de outro batismo', c.v + ' pertence a ' + u.b + (novaMont ? ' · +1 no estoque' : ''));
@@ -1018,7 +1140,7 @@ async function devConsultar(serial) {
     const d = await api('devolucao', { op: 'consultar', serial });
     DEV = { serial, d, cond: '', obs: '', etapa: d.bloqueio ? 'bloqueio' : 'escolher' };
     if (d.bloqueio) msg('er', serial + ' — não é devolução', d.bloqueio);
-    else msg('ok', serial, d.venda ? 'NF ' + d.venda.nf + ' · ' + d.venda.loja + (d.venda.cliente ? ' · ' + d.venda.cliente : '') : 'Expedida');
+    else msg('ok', serial, d.venda ? (d.venda.nf ? 'NF ' + d.venda.nf : 'Pedido ' + d.venda.pedido + ' (sem NF)') + ' · ' + d.venda.loja + (d.venda.cliente ? ' · ' + d.venda.cliente : '') : 'Expedida');
   } catch (e) {
     if (e.semAcesso) return semAcesso(e.message);
     DEV = { serial, etapa: 'erro', erro: e.message }; msg('er', 'Não foi possível', e.message);
@@ -1034,7 +1156,7 @@ function devRender() {
   const d = DEV.d, v = d.venda || {};
   const sitTag = v.situacao ? ' <span class="tag ' + (/^atendido$/i.test(v.situacao) ? 't-ok' : 't-av') + '">' + esc(v.situacao) + '</span>' : (v.pedido ? ' <span class="tag t-cz">situação não achada</span>' : '');
   let h = '<p><b class="mono">' + esc(d.serial) + '</b> <span class="tag ' + (TAGST[d.status] || 't-cz') + '">' + esc(d.status) + '</span><br>' + esc(d.desc || '') + ' <span class="muted">(' + esc(d.sku) + ')</span>' + (d.ehSemi ? ' <span class="semi">SEMINOVA</span>' : '') + '</p>' +
-    (d.venda ? '<h4>Veio de</h4><table>' + L('NF', esc(v.nf) + ' · <b>' + esc(v.loja) + '</b>' + (v.emi ? ' · emitida ' + esc(v.emi) : '')) +
+    (d.venda ? '<h4>Veio de</h4><table>' + L('NF', (v.nf ? esc(v.nf) : '<span class="muted">sem NF (saída por pedido)</span>') + ' · <b>' + esc(v.loja) + '</b>' + (v.emi ? ' · emitida ' + esc(v.emi) : '')) +
       L('Pedido', (v.pedido ? '<b>' + esc(v.pedido) + '</b>' : '<span class="muted">não identificado</span>') + sitTag) +
       L('Cliente', esc(v.cliente) + (v.cidade ? ' · ' + esc(v.cidade) : '')) + L('Canal', esc(v.canal)) + L('Vendedor', esc(v.vendedor)) + L('Envio ML', esc(v.envio)) +
       L('Saiu em', esc(d.expEm) + (d.expPor ? ' · ' + esc(d.expPor) : '')) + '</table>' : '');
@@ -1100,7 +1222,7 @@ function devFatRender() {
   if (!faturista() || !DEVL) return;
   if (DEVL.erro) { box.innerHTML = '<h3>Devoluções</h3><p class="tag t-er">' + esc(DEVL.erro) + '</p>'; return; }
   const li = (o, extra) => '<li><b>' + esc(o.id) + '</b> · <span class="mono">' + esc(o.serial) + '</span> · ' + esc(COND_TXT[o.cond] || o.cond) +
-    '<br><span class="muted">' + esc(o.em) + ' · NF ' + esc(o.nf) + ' ' + esc(o.loja) + (o.ped ? ' · ped. ' + esc(o.ped) : '') + (o.cli ? ' · ' + esc(o.cli) : '') + '</span>' + (extra || '') + '</li>';
+    '<br><span class="muted">' + esc(o.em) + ' · ' + (o.nf ? 'NF ' + esc(o.nf) : 'sem NF') + ' ' + esc(o.loja) + (o.ped ? ' · ped. ' + esc(o.ped) : '') + (o.cli ? ' · ' + esc(o.cli) : '') + '</span>' + (extra || '') + '</li>';
   let h = '<h3>Devoluções · faturista</h3>';
   h += '<h4>Aguardando NF-e de devolução (' + DEVL.aguard.length + ')</h4>' + (DEVL.aguard.length
     ? '<ul class="l">' + DEVL.aguard.map(o => li(o)).join('') + '</ul><p class="muted">Emitida a NF-e, marque a coluna R da aba SERIAL_DEVOLUCOES (ou pelo aviso no painel). Não mexe no estoque.</p>'
@@ -1128,8 +1250,8 @@ function render() {
   if (!S) return;
   $('hQuem').textContent = S.quem.nome; syncTxt();
   document.querySelectorAll('.menu [data-ir]').forEach(b => { const t = b.dataset.ir, ok = podeTela(t);
-    b.classList.toggle('trava', !ok); b.disabled = !ok; b.classList.toggle('hidden', t === 'batismo' && !ok);
-    b.querySelector('.ic').textContent = ok ? { expedicao: '🚚', inventario: '📋', entrada: '📦', devolucao: '↩️', situacao: '📊', batismo: '🏷️' }[t] : '🔒'; });
+    b.classList.toggle('trava', !ok); b.disabled = !ok; b.classList.toggle('hidden', (t === 'batismo' || t === 'saida') && !ok);
+    b.querySelector('.ic').textContent = ok ? { expedicao: '🚚', saida: '🧾', inventario: '📋', entrada: '📦', devolucao: '↩️', situacao: '📊', batismo: '🏷️' }[t] : '🔒'; });
   // devoluções aguardando NF-e (só o faturista vê o número)
   const nAg = faturista() && DEVL && DEVL.aguard ? DEVL.aguard.length : 0;
   $('devBadge').textContent = nAg ? nAg + ' NF-e' : ''; $('devBadge').classList.toggle('hidden', !nAg);
@@ -1150,13 +1272,12 @@ function render() {
     const k = cxNF[u.chave] = cxNF[u.chave] || {}; (k[u.sku] = k[u.sku] || []).push(s); });
   // nº do pedido no Bling (vem da planilha: Ref. Pedido do XML ou, no marketplace, a aba PEDIDOS_LOJA)
   const pedTxt = n => n.ped ? '<div class="ped">Ped. ' + esc(n.ped) + '</div>' : n.pedLoja ? '<div class="ped esp" title="Pedido ' + esc(n.pedLoja) + ' na loja">Ped. aguardando</div>' : '';
-  desfRender();
   $('rLin').innerHTML = todas.map(n => {
     if (n.canc) return '<tr class="canc"><td><b>' + esc(n.nf) + '</b><div>' + esc(n.loja) + '</div>' + pedTxt(n) + '</td><td colspan="3"><b>CANCELADA</b> — não expedir</td></tr>';
     const p = progresso(n), done = completo(n), ab = ABERTA === n.chave && !done, bx = cxNF[n.chave] || {};
     return '<tr class="' + (done ? 'feita' : ab ? 'aberta' : '') + '"><td><b>' + esc(n.nf) + '</b><div class="muted">' + esc(n.loja) + '</div>' + pedTxt(n) + '<span class="tag t-cz">' + (n.envio ? 'ML' : 'DANFE') + '</span></td>' +
       '<td>' + p.map(x => '<div><b>' + esc(x.serial ? pref(x.sku) : x.sku) + '</b> × ' + fmtQ(x.qtd) + (x.serial ? '' : ' <span class="tag t-av">pela NF</span>') +
-        (bx[x.sku] ? bx[x.sku].sort().map(s => '<button type="button" class="sers" data-desf="' + esc(s) + '">' + esc(s) + '<span class="x">✕</span></button>').join('') : '') + '</div>').join('') + '</td>' +
+        (x.serial && bx[x.sku] ? bx[x.sku].sort().map(s => '<div class="sers">' + esc(s) + '</div>').join('') : '') + '</div>').join('') + '</td>' +
       '<td class="ck">' + (n.etq ? '✅' : '⬜') + '</td><td class="ck">' + (done ? '✅' : p.some(x => x.serial && x.feito) ? p.filter(x => x.serial).map(x => x.feito + '/' + fmtQ(x.qtd)).join(' ') : '⬜') + '</td></tr>';
   }).join('');
 
@@ -1211,8 +1332,8 @@ function render() {
 }
 function buscar() {
   const q = $('sBusca').value.trim().toUpperCase(); if (!q) { $('sRes').innerHTML = ''; return; }
-  const achou = Object.keys(S.un).filter(s => s.indexOf(q) >= 0 || S.un[s].nf === q).slice(0, 30);
-  $('sRes').innerHTML = achou.length ? '<table>' + achou.map(s => { const u = S.un[s]; return '<tr><td class="mono"><a href="#" data-rast="' + s + '">' + s + '</a></td><td><span class="tag ' + TAGST[u.s] + '">' + u.s + '</span></td><td class="muted">' + (u.nf ? 'NF ' + esc(u.nf) : esc(u.b)) + '</td></tr>'; }).join('') + '</table>' : '<p class="muted">Nada encontrado.</p>';
+  const achou = Object.keys(S.un).filter(s => s.indexOf(q) >= 0 || S.un[s].nf === q || (S.un[s].ped && S.un[s].ped.split(' ')[0] === q)).slice(0, 30);
+  $('sRes').innerHTML = achou.length ? '<table>' + achou.map(s => { const u = S.un[s]; return '<tr><td class="mono"><a href="#" data-rast="' + s + '">' + s + '</a></td><td><span class="tag ' + TAGST[u.s] + '">' + u.s + '</span></td><td class="muted">' + (docU(u) ? esc(docU(u)) : esc(u.b)) + '</td></tr>'; }).join('') + '</table>' : '<p class="muted">Nada encontrado.</p>';
 }
 $('sBusca').oninput = buscar;
 $('sRes').onclick = e => { const a = e.target.closest('[data-rast]'); if (!a) return; e.preventDefault(); $('rastIn').value = a.dataset.rast; rastrear(a.dataset.rast); $('rastCard').scrollIntoView({ behavior: 'smooth' }); };
@@ -1231,11 +1352,11 @@ async function rastrear(serial) {
     box.innerHTML =
       '<p><b class="mono">' + esc(r.serial) + '</b> <span class="tag ' + (TAGST[r.status] || 't-cz') + '">' + esc(r.status) + '</span><br>' + esc(r.desc || '') + ' <span class="muted">(' + esc(r.sku) + ')</span></p>' +
       (b ? '<h4>Nascimento</h4><table>' + L('Batismo', esc(b.id) + ' · ' + esc(b.data) + ' · ' + esc(b.por)) + L('Faixa', esc(b.faixa)) + L('NF de entrada', esc(b.nfEnt)) + L('Lotes', esc(b.lotes)) + L('Estoque', esc(b.lanc)) + '</table>' : '') +
-      (v ? '<h4>Venda</h4><table>' + L('NF', esc(v.nf) + ' · ' + esc(v.loja) + ' · emitida ' + esc(v.emi) + (v.situacao === 'CANCELADA' ? ' <span class="tag t-er">CANCELADA</span>' : '')) +
+      (v ? '<h4>Venda</h4><table>' + L('NF', v.semNF ? '<span class="muted">sem NF (saída por pedido)</span> · ' + esc(v.loja) : esc(v.nf) + ' · ' + esc(v.loja) + ' · emitida ' + esc(v.emi) + (v.situacao === 'CANCELADA' ? ' <span class="tag t-er">CANCELADA</span>' : '')) +
         L('Cliente', esc(v.cliente) + (v.cidade ? ' · ' + esc(v.cidade) : '')) + L('Canal', esc(v.canal)) + L('Pedido', (v.pedBling ? '<b>' + esc(v.pedBling) + '</b>' : esc(v.pedido)) + (pd ? ' · ' + esc(pd.data) + ' · ' + esc(pd.situacao) + (pd.tipo ? ' · ' + esc(pd.tipo) : '') : '')) +
         L('Pedido na loja', v.pedBling && /loja\s*\d+/i.test(v.pedido) ? '<span class="mono">' + esc((v.pedido.match(/loja\s*(\d+)/i) || [])[1]) + '</span>' : '') +
-        L('Vendedor', esc(v.vendedor)) + L('Envio ML', esc(v.envio)) + L('Itens da NF', v.itens.map(i => esc(pref(i.sku)) + ' × ' + fmtQ(i.qtd)).join(', ')) +
-        L('Chave', '<span class="mono">' + esc(r.chave) + '</span>') + '</table>'
+        L('Vendedor', esc(v.vendedor)) + L('Envio ML', esc(v.envio)) + L(v.semNF ? 'Itens do pedido' : 'Itens da NF', v.itens.map(i => esc(pref(i.sku)) + ' × ' + fmtQ(i.qtd)).join(', ')) +
+        (v.semNF ? '' : L('Chave', '<span class="mono">' + esc(r.chave) + '</span>')) + '</table>'
         : (r.status === ST.EXP ? '<p class="muted">Expedida na NF ' + esc(r.nf) + ' (sem dados da venda — NF adicionada antes do rastreio).</p>' : '')) +
       '<h4>Linha do tempo</h4><ul class="l">' + (r.eventos.length ? r.eventos.map(e => '<li><span class="muted">' + esc(e.quando) + ' · ' + esc(e.quem) + '</span><br>' + (MODO_TXT[e.modo] || esc(e.modo)) + ' — ' + esc(e.res) + (e.lido && e.lido !== r.serial ? ' <span class="muted">(' + esc(e.lido) + ')</span>' : '') + '</li>').join('') : '<li class="muted">Nenhum registro.</li>') + '</ul>';
   } catch (e) { box.innerHTML = '<p class="tag t-er">' + esc(e.message) + '</p>'; msg('er', 'Não foi possível rastrear', e.message); }
