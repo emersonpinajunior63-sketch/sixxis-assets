@@ -181,7 +181,7 @@
       <button class="btn claro" id="xPend">Ver pendências</button>
       <button class="btn claro fat" id="xNovoDia">Novo dia</button>
     </div>
-    <p class="muted">Bipou a caixa errada? Toque no serial dela, embaixo da NF, para tirar só aquela caixa (funciona em qualquer aparelho, até o Novo dia).</p>
+    <p class="muted">Bipou a caixa errada? Toque no serial dela, embaixo da NF, para tirar só aquela caixa ou movê-la para a NF aberta (funciona em qualquer aparelho, até o Novo dia).</p>
     <div class="card hidden" id="xResumo"></div>
   </section>
 
@@ -372,7 +372,8 @@ function normalizar(r) {
   // seminovos (18/11/2026): semi = SKU original → SKU seminovo · deSemi = SKU seminovo → SKU original
   s.semi = r.semi || {}; s.deSemi = {}; Object.keys(s.semi).forEach(k => { s.deSemi[s.semi[k]] = k; });
   // ped (25/11/2026): '4100 · AR BRASIL' quando a caixa saiu por pedido, sem NF
-  (r.un || []).forEach(u => { s.un[u[0]] = { sku: u[1], n: u[2], b: u[3], s: u[4], nf: u[5], chave: u[6], ped: u[7] || '' }; });
+  // saiu (26/11/2026): 'dd/mm' em que a caixa saiu, só EXPEDIDA fora do romaneio aberto
+  (r.un || []).forEach(u => { s.un[u[0]] = { sku: u[1], n: u[2], b: u[3], s: u[4], nf: u[5], chave: u[6], ped: u[7] || '', saiu: u[8] || '' }; });
   s.rom = { id: r.rom.id, lotes: r.rom.lotes || [], nfs: {}, ordem: [], envio: {} };
   (r.rom.nfs || []).forEach(n => { s.rom.nfs[n.chave] = n; s.rom.ordem.push(n.chave); if (n.envio) s.rom.envio[n.envio] = n.chave; });
   s.inv = r.inv ? { id: r.inv.id, ini: r.inv.ini, b: {}, ord: r.inv.ord.slice() } : null;
@@ -381,6 +382,16 @@ function normalizar(r) {
 }
 // documento da caixa expedida, para as mensagens: 'NF 4635' ou 'pedido 4100 · AR BRASIL (sem NF)'
 const docU = u => !u ? '' : u.nf ? 'NF ' + u.nf : u.ped ? 'pedido ' + u.ped + ' (sem NF)' : '';
+// Caixa EXPEDIDA bipada de novo (26/11/2026): está em outra NF DESTE romaneio (é só trocar) ou saiu em outro dia (conferir)?
+// destino = chave da NF aberta, para oferecer "Mover para a NF" no cartão de desfazer.
+function jaExpedida(serial, u, destino) {
+  const nOrig = u.chave && S.rom.nfs[u.chave];
+  if (nOrig) {
+    DESF = serial; DESF_DEST = destino || ''; desfRender();
+    return msg('er', 'Já está na NF ' + nOrig.nf + ' deste romaneio', serial + ' · toque no serial dela embaixo da NF ' + nOrig.nf + ' para tirar' + (destino ? ' ou use "Mover" abaixo' : ''));
+  }
+  return msg('er', 'Caixa já saiu em outro dia', serial + ' · ' + docU(u) + (u.saiu ? ' · expedida em ' + u.saiu : '') + ' — confira se é mesmo esta caixa (Situação › Rastrear)');
+}
 function aplicar(ev) {   // efeito local de uma bipagem (na hora e de novo depois de recarregar, enquanto não confirmada)
   const u = ev.serial && S.un[ev.serial], n = ev.chave && S.rom.nfs[ev.chave];
   if (ev.tipo === 'entrada' && u && u.s !== ST.EXP) u.s = ST.EST;
@@ -609,7 +620,7 @@ function expedicao(c) {
   const n = ABERTA && S.rom.nfs[ABERTA];
   const semN = n && !n.canc && !temSerial(u.sku) && progresso(n).some(p => p.sku === u.sku && cabe(p));   // seminova com serial numa NF já conferida pela nota
   if (!n || n.canc || (completo(n) && !semN)) {
-    if (u.s === ST.EXP) return msg('er', 'Caixa já expedida', c.v + ' · ' + docU(u));
+    if (u.s === ST.EXP) return jaExpedida(c.v, u, '');
     if (u.s === ST.BAT) return msg('er', 'Caixa não conferida na entrada', c.v + ' — está como BATIZADA');
     if (u.s === ST.NL) return msg('er', 'Caixa marcada como não localizada', 'Dê entrada nela de novo antes de expedir');
     const pend = nfsRom().filter(x => (!completo(x) || !temSerial(u.sku)) && progresso(x).some(p => p.sku === u.sku && cabe(p)));
@@ -617,7 +628,7 @@ function expedicao(c) {
     ESPERA = { serial: c.v, ate: Date.now() + ESPERA_MS };
     return msg('av', 'Caixa ' + c.v + ' lida — agora bipe a etiqueta dela', 'Ou a DANFE. A caixa entra sozinha na NF (vale por 1 minuto).');
   }
-  if (u.s === ST.EXP) return u.chave === n.chave ? msg('av', 'Esta caixa já está nesta NF', c.v) : msg('er', 'Caixa já expedida em outro documento', c.v + ' · ' + docU(u));
+  if (u.s === ST.EXP) return u.chave === n.chave ? msg('av', 'Esta caixa já está nesta NF', c.v) : jaExpedida(c.v, u, n.chave);
   if (u.s === ST.BAT) return msg('er', 'Caixa não conferida na entrada', c.v + ' — está como BATIZADA');
   if (u.s === ST.NL) return msg('er', 'Caixa marcada como não localizada', 'Dê entrada nela de novo antes de expedir');
   const p = progresso(n).find(x => x.sku === u.sku);
@@ -640,18 +651,36 @@ $('xDesfazer').onclick = () => {
 // Desfazer uma caixa específica (24/11/2026): toca no serial embaixo da NF → confirma → volta para EM ESTOQUE.
 // Vale em qualquer aparelho (não depende da lista "últimas" deste celular). A planilha só aceita enquanto a NF
 // estiver no romaneio aberto (antes do Novo dia).
-let DESF = null;
+let DESF = null, DESF_DEST = '';   // DESF_DEST (26/11/2026): NF aberta para onde a caixa pode ser movida
 function desfRender() {
   const box = $('xDesf');
   const u = DESF && S.un[DESF], n = u && u.chave && S.rom.nfs[u.chave];
-  if (!DESF || !u || u.s !== ST.EXP || !n) { DESF = null; box.classList.add('hidden'); box.innerHTML = ''; return; }
+  if (!DESF || !u || u.s !== ST.EXP || !n) { DESF = null; DESF_DEST = ''; box.classList.add('hidden'); box.innerHTML = ''; return; }
+  // mover só se a NF de destino existe, não está cancelada, é outra NF e ainda pede este produto
+  const nD = DESF_DEST && S.rom.nfs[DESF_DEST];
+  const podeMover = nD && !nD.canc && nD.chave !== n.chave && progresso(nD).some(p => p.sku === u.sku && cabe(p));
   box.classList.remove('hidden');
-  box.innerHTML = '<h3>Tirar esta caixa da NF?</h3><p><b class="mono">' + esc(DESF) + '</b> · ' + esc(pref(u.sku)) + '<br>NF ' + esc(n.nf) + ' · ' + esc(n.loja) + '</p>' +
-    '<p class="muted">A caixa volta para EM ESTOQUE e a NF fica incompleta: depois é só bipar a caixa certa.</p>' +
+  box.innerHTML = '<h3>' + (podeMover ? 'Esta caixa está na NF ' + esc(n.nf) : 'Tirar esta caixa da NF?') + '</h3><p><b class="mono">' + esc(DESF) + '</b> · ' + esc(pref(u.sku)) + '<br>NF ' + esc(n.nf) + ' · ' + esc(n.loja) + '</p>' +
+    (podeMover ? '<p class="muted"><b>Mover</b>: a caixa sai da NF ' + esc(n.nf) + ' e entra na NF ' + esc(nD.nf) + '. A NF ' + esc(n.nf) + ' fica incompleta: bipe outra caixa para ela.</p>' +
+      '<div class="row"><button class="btn" id="xDesfMover" style="flex:1">Mover para a NF ' + esc(nD.nf) + '</button></div>' : '') +
+    '<p class="muted">' + (podeMover ? '<b>Desfazer</b>: ' : '') + 'A caixa volta para EM ESTOQUE e a NF fica incompleta: depois é só bipar a caixa certa.</p>' +
     '<div class="row"><button class="btn claro" id="xDesfNao">Cancelar</button><button class="btn verm" id="xDesfSim" style="flex:1">Desfazer caixa</button></div>';
-  $('xDesfNao').onclick = () => { DESF = null; desfRender(); };
+  $('xDesfNao').onclick = () => { DESF = null; DESF_DEST = ''; desfRender(); };
+  if (podeMover) $('xDesfMover').onclick = function () {
+    confirmar(this, this.textContent, () => {
+      const s = DESF, uu = S.un[s], de = uu && uu.chave && S.rom.nfs[uu.chave], para = S.rom.nfs[DESF_DEST];
+      DESF = null; DESF_DEST = '';
+      if (!uu || uu.s !== ST.EXP || !de || !para) { desfRender(); return msg('av', 'Nada a mover', s + ' mudou enquanto isso'); }
+      // a planilha processa na ordem: tira da NF antiga e põe na nova (mesmas checagens de sempre)
+      enfileirar({ tipo: 'desfazerCaixa', serial: s });
+      enfileirar({ tipo: 'caixa', serial: s, chave: para.chave });
+      const i = ULTIMAS.lastIndexOf(s); if (i >= 0) ULTIMAS.splice(i, 1); ULTIMAS.push(s);
+      ABERTA = para.chave; render();
+      msg('ok', s + ' movida para a NF ' + para.nf, (completo(para) ? '✅ NF ' + para.nf + ' conferida · ' : '') + 'a NF ' + de.nf + ' ficou faltando ' + pref(uu.sku) + ': bipe outra caixa para ela');
+    });
+  };
   $('xDesfSim').onclick = () => {
-    const s = DESF, uu = S.un[s]; DESF = null;
+    const s = DESF, uu = S.un[s]; DESF = null; DESF_DEST = '';
     if (!uu || uu.s !== ST.EXP) { desfRender(); return msg('av', 'Nada a desfazer', s + ' já não está expedida'); }
     const nf = uu.nf;
     enfileirar({ tipo: 'desfazerCaixa', serial: s });
@@ -661,7 +690,7 @@ function desfRender() {
 }
 $('rLin').addEventListener('click', e => {
   const b = e.target.closest('[data-desf]'); if (!b || !pode('expedicao')) return;
-  DESF = b.dataset.desf; desfRender();
+  DESF = b.dataset.desf; DESF_DEST = ABERTA || ''; desfRender();   // com uma NF aberta, o cartão também oferece mover para ela (26/11/2026)
   $('xDesf').scrollIntoView({ behavior: 'smooth', block: 'center' });
 });
 $('xPend').onclick = () => {
