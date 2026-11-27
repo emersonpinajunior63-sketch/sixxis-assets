@@ -125,6 +125,19 @@
   .sp .fim input { width: 80px; flex: none; text-align: center; font-size: 17px; }
   .sp .fim .sp-pm { width: 46px; flex: none; font-size: 22px; padding: 6px 0; line-height: 1; }
   .sp .faixa { background: #eaf6ec; border-radius: 8px; padding: 8px 10px; margin-top: 8px; font-size: 14px; }
+  .sp.col { border-left-color: var(--az); }
+  .sp .faixa.col { background: #e8f0fe; }
+  .sp-g .topo b { font-size: 16px; }
+  .sp-cl { display: flex; gap: 10px; align-items: center; padding: 9px 4px; border-bottom: 1px solid #eef0f3; font-size: 14px; }
+  .sp-cl input { width: 22px; height: 22px; flex: none; }
+  .sp-cl small { display: block; color: #6b7480; font-size: 12px; }
+  .sp-cf { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 8px; margin-top: 10px; }
+  .sp-cf label { font-size: 12.5px; color: #5b6470; }
+  .sp-cf input { width: 100%; }
+  .sp-cf .l2 { grid-column: 1 / -1; }
+  .sp-feitas { margin-top: 10px; font-size: 13.5px; }
+  .sp-feitas li { padding: 6px 0; border-top: 1px solid #eef0f3; list-style: none; }
+  .sp-feitas ul { padding: 0; margin: 0; }
   #spMsg { min-height: 0; }
   #spMsg:empty { display: none; }
 </style>
@@ -213,7 +226,7 @@
     <div class="card">
       <div class="row" style="justify-content:space-between;margin-top:0">
         <div><span class="grande" id="spCont">0/0</span> <span class="muted">NFs separadas</span></div>
-        <div class="chips" id="spFiltro"><button data-spf="pend">A separar</button><button data-spf="ok">Separadas</button><button data-spf="todas">Todas</button></div>
+        <div class="chips" id="spFiltro"><button data-spf="pend">A separar</button><button data-spf="ok">Separadas</button><button data-spf="coleta">Coleta</button><button data-spf="todas">Todas</button></div>
       </div>
       <div class="row fat"><button class="btn" id="spAdd" style="flex:1">Adicionar à separação</button><input type="file" id="spArq" multiple hidden></div>
       <p class="muted fat" style="margin:2px 0 6px">XMLs do Bling (.xml ou .zip). Entram só aqui: não vão para a Expedição nem ficam esperando bipagem. O que você adiciona no lote da Expedição já aparece aqui.</p>
@@ -854,7 +867,7 @@ $('rArq').onchange = async function () {
     const tit = r.add ? 'Lote ' + r.lote + ': ' + r.add + ' NF(s) no romaneio' : 'Nenhuma NF nova';
     msg(avisos.length ? 'av' : r.add || r.lig || r.canc ? 'ok' : 'av', tit,
       avisos.concat([r.dup ? r.dup + ' já estavam' : '', ign ? ign + ' XML(s) ignorado(s) (entrada, não autorizada ou outro tipo)' : '', r.canc ? r.canc + ' cancelada(s)' : '', r.lig ? r.lig + ' etiqueta(s) ML ligada(s)' : '',
-        r.sep && r.sep.add ? '🧺 ' + r.sep.add + ' na Separação' : '', r.sepErro ? '⚠ Separação: ' + r.sepErro : '']).filter(Boolean).join(' · '));
+        r.sep && r.sep.add ? '🧺 ' + r.sep.add + ' na Separação' + (r.sep.conf ? ' (' + r.sep.conf + ' já conferida(s), entram separadas)' : '') : '', r.sepErro ? '⚠ Separação: ' + r.sepErro : '']).filter(Boolean).join(' · '));
     // transportadora e volumes vêm só do XML: NF da separação sem eles vira aviso (27/11/2026)
     const sT = (r.sep && r.sep.semTransp) || [], sV = (r.sep && r.sep.semVol) || [], sF = (r.sep && r.sep.semFrete) || [];
     if (sT.length || sV.length || sF.length) msg('er', '⚠ NF da separação com dado faltando no XML',
@@ -867,7 +880,10 @@ $('rArq').onchange = async function () {
 // (Separacao.gs) guarda na aba SERIAL_SEPARACAO a transportadora, o frete, os volumes, o peso e os itens com descrição.
 // Quem separa toca em cada produto e, no fim, informa os volumes e conclui. Precisa de internet (não usa a fila das
 // bipagens): cada toque já aparece marcado e vai para a planilha em ordem; se a planilha recusar, a tela se corrige.
-const SP_ST = { PEND: 'PENDENTE', OK: 'SEPARADA', FORA: 'FORA DA LISTA', CANC: 'CANCELADA' };
+const SP_ST = { PEND: 'PENDENTE', OK: 'SEPARADA', COL: 'COLETADA', FORA: 'FORA DA LISTA', CANC: 'CANCELADA' };
+const spSep = e => e.sit === SP_ST.OK || e.sit === SP_ST.COL;   // separada (coletada ou esperando a coleta)
+const spGrupo = e => e.mkt ? '🏷 ' + (e.canal || 'Marketplace') : (e.transp || 'Sem transportadora');
+const SP_SEL = {}, SP_FORM = {};   // coleta: NFs desmarcadas na lista · motorista/placa/hora digitados, por transportadora
 let SP_FILTRO = ls.get('ldr_spf', 'pend'), SP_ADIADO = false;
 const SP_PEND = {}, SP_Q = {}, SP_VOL = {};   // por NF: mudanças locais ainda não confirmadas · fila de envio · volumes digitados
 const spCanc = e => { const n = S.rom.nfs[e.chave]; return e.sit === SP_ST.CANC || !!(n && n.canc); };
@@ -901,13 +917,13 @@ function spOp(ch, op, extra, local) {
   return vez;
 }
 function spCard(e) {
-  const canc = spCanc(e), ok = e.sit === SP_ST.OK, fora = e.sit === SP_ST.FORA, n = S.rom.nfs[e.chave], fat = faturista();
-  const marc = e.itens.filter((x, i) => e.seps[i]).length, todos = marc === e.itens.length, trava = ok || fora || canc;
+  const canc = spCanc(e), ok = e.sit === SP_ST.OK, col = e.sit === SP_ST.COL, fora = e.sit === SP_ST.FORA, n = S.rom.nfs[e.chave], fat = faturista();
+  const marc = e.itens.filter((x, i) => e.seps[i]).length, todos = marc === e.itens.length, trava = ok || col || fora || canc;
   // caixas com serial já bipadas na Expedição, por SKU (só informação: a separação não exige)
   const prog = {}; if (n && !canc) progresso(n).forEach(p => { if (p.serial) prog[p.sku] = p; });
   const ped = n && n.ped ? n.ped : (String(e.ped || '').match(/^\d+/) || [])[0] || '';
-  const tag = canc ? '<span class="tag t-er">CANCELADA</span>' : ok ? '<span class="tag t-ok">SEPARADA</span>' : fora ? '<span class="tag t-cz">FORA DA LISTA</span>' : '<span class="tag t-av">' + marc + '/' + e.itens.length + ' produtos</span>';
-  let h = '<div class="card sp' + (canc ? ' canc' : ok ? ' ok' : fora ? ' fora' : '') + '">' +
+  const tag = canc ? '<span class="tag t-er">CANCELADA</span>' : col ? '<span class="tag" style="background:#e8f0fe;color:var(--az)">COLETADA</span>' : ok ? '<span class="tag t-ok">SEPARADA</span>' : fora ? '<span class="tag t-cz">FORA DA LISTA</span>' : '<span class="tag t-av">' + marc + '/' + e.itens.length + ' produtos</span>';
+  let h = '<div class="card sp' + (canc ? ' canc' : col ? ' col' : ok ? ' ok' : fora ? ' fora' : '') + '">' +
     '<div class="topo"><b class="nf">NF ' + esc(e.nf) + '</b><span class="muted">' + esc(e.loja) + '</span>' + (ped ? '<span class="ped">Ped. ' + esc(ped) + '</span>' : '') + tag + '</div>' +
     '<div class="cli"><b>' + esc(e.cli || 'Cliente não informado') + '</b>' + (e.cid ? ' · ' + esc(e.cid) : '') + '</div>' +
     (e.vend ? '<div class="muted">Vendedor: ' + esc(e.vend) + '</div>' : '');
@@ -935,6 +951,9 @@ function spCard(e) {
   if (canc) h += '<div class="faixa" style="background:#fde4e4">NF cancelada: não separar, não expedir.</div>';
   else if (fora) h += '<div class="muted" style="margin-top:6px">Tirada da lista' + (e.por ? ' por ' + esc(e.por) + (e.em ? ' em ' + esc(e.em) : '') : '') + '.</div>' +
     (fat ? '<div class="fim"><button class="btn claro" data-spa="voltar">Voltar para a lista</button></div>' : '');
+  else if (col) h += '<div class="faixa">✅ Separada por <b>' + esc(e.por) + '</b>' + (e.em ? ' em ' + esc(e.em) : '') + ' · <b>' + e.volSep + '</b> volume(s)</div>' +
+    '<div class="faixa col">🚛 Coletada ' + esc(e.col) + ' · <b>' + esc(e.mot) + '</b> · placa <b>' + esc(e.placa) + '</b>' + (e.colPor ? '<br><span class="muted">registrada por ' + esc(e.colPor) + '</span>' : '') + '</div>' +
+    (fat ? '<div class="fim"><button class="btn claro" data-spa="desfazerColeta" style="padding:6px 10px;font-size:13px">Desfazer coleta</button></div>' : '');
   else if (ok) h += '<div class="faixa">✅ Separada por <b>' + esc(e.por) + '</b>' + (e.em ? ' em ' + esc(e.em) : '') + ' · <b>' + e.volSep + '</b> volume(s)' +
     (e.vol && e.vol !== e.volSep ? ' <span class="tag t-cz">nota: ' + e.vol + ' vol.</span>' : '') + '</div>' +
     '<div class="fim"><button class="btn claro" data-spa="reabrir">Reabrir</button></div>';
@@ -956,7 +975,7 @@ function spCard(e) {
 function sepRender() {
   if (!S) return;
   const todas = S.sepOrd.map(c => S.sep[c]).filter(Boolean), conta = todas.filter(spConta);
-  const nOk = conta.filter(e => e.sit === SP_ST.OK).length, nPend = conta.length - nOk;
+  const nOk = conta.filter(spSep).length, nPend = conta.length - nOk;
   $('spBadge').textContent = nPend ? nPend : ''; $('spBadge').classList.toggle('hidden', !nPend || !podeTela('separacao'));
   if (TELA !== 'separacao') return;
   $('spCont').textContent = nOk + '/' + conta.length;
@@ -964,15 +983,16 @@ function sepRender() {
   // resumo por transportadora (para a coleta): NFs e volumes (separados, ou os da NF enquanto não separou)
   const porT = {};
   conta.forEach(e => { const t = e.mkt ? '🏷 ' + (e.canal || 'Marketplace') : e.transp || 'sem transportadora'; const x = porT[t] = porT[t] || { nf: 0, ok: 0, vol: 0 };
-    x.nf++; if (e.sit === SP_ST.OK) x.ok++; x.vol += e.sit === SP_ST.OK ? e.volSep : (e.vol || 0); });
+    x.nf++; if (spSep(e)) x.ok++; x.vol += spSep(e) ? e.volSep : (e.vol || 0); });
   $('spTransp').innerHTML = Object.keys(porT).sort().map(t => (t === 'sem transportadora' ? '<b style="color:var(--er)">⚠ sem transportadora</b>: ' : t.indexOf('🏷') === 0 ? '<b>' + esc(t) + '</b>: ' : '🚚 <b>' + esc(t) + '</b>: ') + porT[t].ok + '/' + porT[t].nf + ' NF separada(s)' + (porT[t].vol ? ' · ' + porT[t].vol + ' vol.' : '')).join('<br>');
   let h = '', cards = null;
   if (!S.sepAtivo) h = '<div class="aviso">A separação ainda não está instalada no servidor (arquivo Separacao.gs no projeto do Painel).</div>';
   else if (S.sepErro) h = '<div class="aviso">Erro ao ler a separação: ' + esc(S.sepErro) + '</div>';
   else {
-    const vis = todas.filter(e => SP_FILTRO === 'todas' ? true : SP_FILTRO === 'ok' ? e.sit === SP_ST.OK && !spCanc(e) : e.sit === SP_ST.PEND && !spCanc(e));
-    // pendentes primeiro, por transportadora e NF; canceladas e fora da lista no fim
-    const peso = e => spCanc(e) ? 3 : e.sit === SP_ST.FORA ? 2 : e.sit === SP_ST.OK ? 1 : 0;
+    if (SP_FILTRO === 'coleta') { const g = spColeta(todas.filter(spConta)); return spPintar(g.length ? g : [{ ch: '', html: '<div class="card"><p class="muted" style="margin:0">Nenhuma NF separada para coletar.</p></div>' }]); }
+    const vis = todas.filter(e => SP_FILTRO === 'todas' ? true : SP_FILTRO === 'ok' ? spSep(e) && !spCanc(e) : e.sit === SP_ST.PEND && !spCanc(e));
+    // pendentes primeiro, por transportadora e NF; coletadas, canceladas e fora da lista no fim
+    const peso = e => spCanc(e) ? 4 : e.sit === SP_ST.FORA ? 3 : e.sit === SP_ST.COL ? 2 : e.sit === SP_ST.OK ? 1 : 0;
     vis.sort((a, b) => peso(a) - peso(b) || (a.transp || '~').localeCompare(b.transp || '~') || (Number(a.nf) || 0) - (Number(b.nf) || 0));
     if (vis.length) cards = vis.map(e => ({ ch: e.chave, html: spCard(e) }));
     else if (!todas.length) h = '<div class="card"><p class="muted" style="margin:0">Nenhuma venda para separar. ' +
@@ -986,7 +1006,10 @@ function sepRender() {
 const SP_HTML = {};
 function spPintar(lista) {
   const box = $('spLista'), ord = lista.map(x => x.ch).join(','), ativo = document.activeElement;
-  const restaurar = el => el.querySelectorAll('[data-spvol]').forEach(i => { const c = i.closest('[data-ch]'); if (c && SP_VOL[c.dataset.ch] != null) i.value = SP_VOL[c.dataset.ch]; });
+  const restaurar = el => {
+    el.querySelectorAll('[data-spvol]').forEach(i => { const c = i.closest('[data-ch]'); if (c && SP_VOL[c.dataset.ch] != null) i.value = SP_VOL[c.dataset.ch]; });
+    el.querySelectorAll('[data-colf]').forEach(i => { const c = i.closest('[data-ch]'), f = c && SP_FORM[c.dataset.ch]; if (f && f[i.dataset.colf] != null) i.value = f[i.dataset.colf]; });
+  };
   SP_ADIADO = false;
   if (box.dataset.ord !== ord || !lista[0].ch) {
     if (box.dataset.ord === ord && SP_HTML[''] === lista[0].html) return;
@@ -996,7 +1019,7 @@ function spPintar(lista) {
   }
   lista.forEach(x => {
     if (SP_HTML[x.ch] === x.html) return;
-    const velho = box.querySelector('[data-ch="' + x.ch + '"]'); if (!velho) return;
+    const velho = box.querySelector('[data-ch="' + CSS.escape(x.ch) + '"]'); if (!velho) return;
     if (ativo && ativo.tagName === 'INPUT' && velho.contains(ativo)) { SP_ADIADO = true; return; }
     const t = document.createElement('div'); t.innerHTML = x.html;
     const novo = t.firstElementChild; velho.replaceWith(novo); SP_HTML[x.ch] = x.html; restaurar(novo);
@@ -1029,15 +1052,20 @@ $('spArq').onchange = async function () {
 };
 document.querySelectorAll('[data-spf]').forEach(b => b.onclick = () => { SP_FILTRO = b.dataset.spf; ls.set('ldr_spf', SP_FILTRO); sepRender(true); });
 $('spLista').addEventListener('focusout', () => setTimeout(() => { if (SP_ADIADO) sepRender(true); }, 0));
-$('spLista').addEventListener('input', e => { const c = e.target.closest('[data-ch]'); if (e.target.dataset.spvol && c) SP_VOL[c.dataset.ch] = e.target.value; });
+$('spLista').addEventListener('input', e => { const c = e.target.closest('[data-ch]'); if (!c) return;
+  if (e.target.dataset.spvol) SP_VOL[c.dataset.ch] = e.target.value;
+  if (e.target.dataset.colf) (SP_FORM[c.dataset.ch] = SP_FORM[c.dataset.ch] || {})[e.target.dataset.colf] = e.target.value; });
+$('spLista').addEventListener('change', e => { const x = e.target.dataset.colch; if (!x) return; if (e.target.checked) delete SP_SEL[x]; else SP_SEL[x] = false; sepRender(); });
 $('spLista').addEventListener('keydown', e => {
   if (e.key !== 'Enter') return;
   const c = e.target.closest('[data-ch]'); if (!c) return;
-  const b = c.querySelector('[data-spa="concluir"]'); if (b) { e.preventDefault(); b.click(); }
+  const b = c.querySelector('[data-spa="concluir"]') || c.querySelector('[data-spa="coleta"]'); if (b) { e.preventDefault(); b.click(); }
 });
 $('spLista').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b || b.disabled) return;
-  const c = b.closest('[data-ch]'), ch = c && c.dataset.ch, en = ch && S.sep[ch]; if (!en) return;
+  const c = b.closest('[data-ch]'), ch = c && c.dataset.ch;
+  if (b.dataset.spa === 'coleta' && ch) return spColetar(b, ch);
+  const en = ch && S.sep[ch]; if (!en) return;
   if (b.dataset.spi != null) {   // marca / desmarca um produto
     const i = Number(b.dataset.spi), v = !en.seps[i], quem = S.quem.nome + ' ' + agoraTxt();
     if (navigator.vibrate) navigator.vibrate(v ? 40 : [30, 40, 30]);
@@ -1058,7 +1086,61 @@ $('spLista').addEventListener('click', e => {
   } else if (a === 'reabrir') confirmar(b, 'Reabrir', () => spOp(ch, 'reabrir').then(r => { if (r) spAviso('NF ' + en.nf + ' reaberta: os produtos marcados continuam marcados.'); }));
   else if (a === 'fora') confirmar(b, 'Tirar da lista', () => spOp(ch, 'fora').then(r => { if (r) spAviso('NF ' + en.nf + ' tirada da lista (veja em "Todas").'); }));
   else if (a === 'voltar') spOp(ch, 'voltar').then(r => { if (r) spAviso('NF ' + en.nf + ' voltou para a lista.'); });
+  else if (a === 'desfazerColeta') confirmar(b, 'Desfazer coleta', () => spOp(ch, 'desfazerColeta').then(r => { if (r) spAviso('Coleta da NF ' + en.nf + ' desfeita: ela voltou para "esperando a coleta".'); }));
 });
+
+// ---------- COLETA (27/11/2026): por transportadora, as NFs separadas que ela levou + motorista, placa e hora ----------
+// Cartão por transportadora (ou canal, no marketplace): NFs separadas esperando a coleta (todas marcadas; desmarque a
+// que não foi), quantas ainda faltam separar e as coletas já feitas hoje. "Registrar coleta" grava todas ou nenhuma.
+function spColeta(lista) {
+  const G = {};
+  lista.forEach(e => { const g = spGrupo(e); (G[g] = G[g] || []).push(e); });
+  const nome = g => g.indexOf('🏷') === 0 ? '<b>' + esc(g) + '</b>' : g === 'Sem transportadora' ? '<b style="color:var(--er)">⚠ Sem transportadora</b>' : '🚚 <b>' + esc(g) + '</b>';
+  return Object.keys(G).sort((a, b) => { const p = g => G[g].some(e => e.sit === SP_ST.OK) ? 0 : 1; return p(a) - p(b) || a.localeCompare(b); }).map(g => {
+    const L = G[g], prontas = L.filter(e => e.sit === SP_ST.OK).sort((a, b) => (Number(a.nf) || 0) - (Number(b.nf) || 0));
+    const pend = L.filter(e => e.sit === SP_ST.PEND).length, feitas = L.filter(e => e.sit === SP_ST.COL);
+    const sel = prontas.filter(e => SP_SEL[e.chave] !== false), vol = sel.reduce((a, e) => a + e.volSep, 0);
+    let h = '<div class="card sp sp-g' + (prontas.length ? '' : ' ok') + '" data-ch="g:' + esc(g) + '"><div class="topo">' + nome(g) +
+      '<span class="tag ' + (prontas.length ? 't-av' : 't-ok') + '">' + (prontas.length ? prontas.length + ' NF(s) para coletar' : 'nada para coletar') + '</span></div>' +
+      (pend ? '<p class="muted" style="margin:6px 0 0">' + pend + ' NF(s) desta transportadora ainda não separada(s).</p>' : '');
+    if (prontas.length) {
+      h += prontas.map(e => '<label class="sp-cl"><input type="checkbox" data-colch="' + e.chave + '"' + (SP_SEL[e.chave] !== false ? ' checked' : '') + '>' +
+        '<span><b>NF ' + esc(e.nf) + '</b> · ' + esc(e.cli || '—') + ' · <b>' + e.volSep + '</b> vol.<small>' + esc(e.loja) + (e.cid ? ' · ' + esc(e.cid) : '') + '</small></span></label>').join('') +
+        '<div class="sp-cf"><div class="l2"><label>Motorista</label><input class="txt" data-colf="mot" placeholder="Nome do motorista" autocomplete="off"></div>' +
+        '<div><label>Placa</label><input class="txt" data-colf="placa" placeholder="ABC1D23" autocapitalize="characters" autocomplete="off" maxlength="8"></div>' +
+        '<div><label>Hora (vazio = agora)</label><input class="txt" data-colf="hora" type="time"></div></div>' +
+        '<div class="fim"><button class="btn" data-spa="coleta" style="flex:1"' + (sel.length ? '' : ' disabled') + '>Registrar coleta · ' + sel.length + ' NF · ' + vol + ' vol.</button></div>';
+    }
+    if (feitas.length) {
+      const por = {};
+      feitas.forEach(e => { const k = e.col + '|' + e.mot + '|' + e.placa; (por[k] = por[k] || []).push(e); });
+      h += '<div class="sp-feitas"><span class="muted">Coletadas</span><ul>' + Object.keys(por).sort().map(k => { const x = por[k], e = x[0];
+        return '<li>🚛 <b>' + esc(e.col) + '</b> · ' + esc(e.mot) + ' · ' + esc(e.placa) + '<br><span class="muted">NF ' + x.map(y => esc(y.nf)).join(', ') + ' · ' + x.reduce((a, y) => a + y.volSep, 0) + ' vol.</span></li>'; }).join('') + '</ul></div>';
+    }
+    return { ch: 'g:' + g, html: h + '</div>' };
+  });
+}
+function spColetar(b, gch) {
+  const g = gch.slice(2), f = SP_FORM[gch] || {};
+  const card = b.closest('[data-ch]'), val = k => { const i = card.querySelector('[data-colf="' + k + '"]'); return (i ? i.value : f[k] || '').trim(); };
+  const mot = val('mot'), placa = val('placa').toUpperCase().replace(/[^A-Z0-9]/g, ''), hora = val('hora');
+  const prontas = S.sepOrd.map(c => S.sep[c]).filter(e => e && e.sit === SP_ST.OK && !spCanc(e) && spGrupo(e) === g && SP_SEL[e.chave] !== false);
+  if (!prontas.length) return spAviso('Marque pelo menos uma NF.', 'er');
+  if (mot.length < 2) { spAviso('Informe o nome do motorista.', 'er'); som('er'); return; }
+  if (!/^[A-Z]{3}\d[A-Z0-9]\d{2}$/.test(placa)) { spAviso('Placa inválida: use ABC1234 ou ABC1D23.', 'er'); som('er'); return; }
+  confirmar(b, b.textContent, async () => {
+    b.disabled = true; b.textContent = 'Gravando…';
+    try {
+      const r = await api('separacao', { op: 'coleta', chaves: prontas.map(e => e.chave), motorista: mot, placa: placa, hora: hora });
+      delete SP_FORM[gch]; prontas.forEach(e => delete SP_SEL[e.chave]);
+      spAviso('🚛 ' + r.n + ' NF(s) coletadas · ' + r.vol + ' vol. · ' + r.motorista + ' · ' + r.placa + ' · ' + r.hora, 'ok'); som('ok');
+      await carregar(true);
+    } catch (err) {
+      if (err.semAcesso) return semAcesso(err.message);
+      spAviso('A coleta NÃO foi registrada: ' + err.message, 'er'); som('er'); b.disabled = false; sepRender();
+    }
+  });
+}
 
 // ================= SAÍDA POR PEDIDO, venda sem NF (25/11/2026) =================
 // Filial + nº do pedido do Bling → o servidor (SaidaPedido.gs) procura o pedido na aba da loja e devolve os produtos.
@@ -1590,7 +1672,7 @@ function render() {
   $('rLin').innerHTML = todas.map(n => {
     if (n.canc) return '<tr class="canc"><td><b>' + esc(n.nf) + '</b><div>' + esc(n.loja) + '</div>' + pedTxt(n) + '</td><td colspan="3"><b>CANCELADA</b> — não expedir</td></tr>';
     const p = progresso(n), done = completo(n), ab = ABERTA === n.chave && !done, bx = cxNF[n.chave] || {};
-    const sp = S.sep[n.chave], spTag = !sp || sp.sit === SP_ST.FORA ? '' : sp.sit === SP_ST.OK ? ' <span class="tag t-ok">separada · ' + sp.volSep + ' vol</span>' : ' <span class="tag t-av">a separar</span>';
+    const sp = S.sep[n.chave], spTag = !sp || sp.sit === SP_ST.FORA ? '' : sp.sit === SP_ST.COL ? ' <span class="tag t-ok">coletada ' + esc(sp.col.slice(6)) + '</span>' : sp.sit === SP_ST.OK ? ' <span class="tag t-ok">separada · ' + sp.volSep + ' vol</span>' : ' <span class="tag t-av">a separar</span>';
     return '<tr class="' + (done ? 'feita' : ab ? 'aberta' : '') + '"><td><b>' + esc(n.nf) + '</b><div class="muted">' + esc(n.loja) + '</div>' + pedTxt(n) + '<span class="tag t-cz">' + (n.envio ? 'ML' : 'DANFE') + '</span>' + spTag + '</td>' +
       '<td>' + p.map(x => '<div><b>' + esc(x.serial ? pref(x.sku) : x.sku) + '</b> × ' + fmtQ(x.qtd) + (x.serial ? '' : ' <span class="tag t-av">pela NF</span>') +
         (bx[x.sku] ? bx[x.sku].sort().map(s => '<button type="button" class="sers" data-desf="' + esc(s) + '">' + esc(s) + '<span class="x">✕</span></button>').join('') : '') + '</div>').join('') + '</td>' +
@@ -1658,7 +1740,7 @@ $('sBusca').oninput = buscar;
 $('sRes').onclick = e => { const a = e.target.closest('[data-rast]'); if (!a) return; e.preventDefault(); $('rastIn').value = a.dataset.rast; rastrear(a.dataset.rast); $('rastCard').scrollIntoView({ behavior: 'smooth' }); };
 
 // ================= RASTREAR (história da caixa) =================
-const MODO_TXT = { 'BATISMO': '🏷️ Batizada', 'ENTRADA': '📦 Entrada', 'EXPEDIÇÃO': '🚚 Expedição', 'INVENTÁRIO': '📋 Inventário', 'ESTOQUE': '🧾 Estoque', 'DEVOLUÇÃO': '↩️ Devolução', 'BAIXA': '🗑️ Baixa' };
+const MODO_TXT = { 'BATISMO': '🏷️ Batizada', 'ENTRADA': '📦 Entrada', 'EXPEDIÇÃO': '🚚 Expedição', 'INVENTÁRIO': '📋 Inventário', 'ESTOQUE': '🧾 Estoque', 'DEVOLUÇÃO': '↩️ Devolução', 'BAIXA': '🗑️ Baixa', 'SEPARAÇÃO': '🧺 Separação', 'COLETA': '🚛 Coleta' };
 async function rastrear(serial) {
   serial = String(serial || '').trim().toUpperCase(); if (!serial) return;
   const box = $('rastRes'); box.innerHTML = '<p class="muted">Buscando ' + esc(serial) + '…</p>';
