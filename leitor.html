@@ -105,6 +105,28 @@
   .menu button .badge { margin-left: auto; background: var(--er); color: #fff; border-radius: 999px; padding: 2px 9px; font-size: 13px; }
   /* saída por pedido, venda sem NF (25/11/2026) */
   .sx-x { border: 0; background: transparent; color: var(--er); font-size: 20px; line-height: 1; padding: 0 4px; }
+  /* separação das vendas por transportadora (27/11/2026) */
+  .sp { border-left: 5px solid var(--av); }
+  .sp.ok { border-left-color: var(--ok); } .sp.fora { border-left-color: #b0b8c1; opacity: .75; } .sp.canc { border-left-color: var(--er); }
+  .sp .topo { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .sp .topo b.nf { font-size: 17px; }
+  .sp .cli { font-size: 14px; margin-top: 3px; }
+  .sp .tr { margin: 8px 0 4px; padding: 8px 10px; border-radius: 8px; background: #eef3fb; font-size: 14px; }
+  .sp .tr.sem { background: #fff4d6; }
+  .sp .tr b { font-size: 15px; }
+  .sp-it { display: flex; gap: 10px; align-items: flex-start; width: 100%; text-align: left; border: 1px solid #e3e7ec; background: #fff; border-radius: 10px; padding: 10px; margin: 6px 0; font-size: 15px; color: var(--tx); }
+  .sp-it .cx { flex: none; width: 26px; height: 26px; border-radius: 6px; border: 2px solid #9aa3ad; display: grid; place-items: center; font-size: 17px; color: #fff; margin-top: 1px; }
+  .sp-it.on { background: #eaf6ec; border-color: #bfe3c4; }
+  .sp-it.on .cx { background: var(--ok); border-color: var(--ok); }
+  .sp-it .q { font-weight: 800; font-size: 18px; white-space: nowrap; }
+  .sp-it small { display: block; color: #6b7480; font-size: 12.5px; margin-top: 2px; }
+  .sp-it:disabled { color: var(--tx); }
+  .sp .fim { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+  .sp .fim input { width: 80px; flex: none; text-align: center; font-size: 17px; }
+  .sp .fim .sp-pm { width: 46px; flex: none; font-size: 22px; padding: 6px 0; line-height: 1; }
+  .sp .faixa { background: #eaf6ec; border-radius: 8px; padding: 8px 10px; margin-top: 8px; font-size: 14px; }
+  #spMsg { min-height: 0; }
+  #spMsg:empty { display: none; }
 </style>
 </head>
 <body>
@@ -137,6 +159,7 @@
   <section id="t-menu" class="hidden">
     <div class="menu">
       <button data-ir="expedicao"><span class="ic">🚚</span><span>EXPEDIÇÃO<small>Romaneio do dia: etiqueta ou DANFE + produto</small></span></button>
+      <button data-ir="separacao"><span class="ic">🧺</span><span>SEPARAÇÃO<small>Vendas por transportadora: o que separar</small></span><span class="badge hidden" id="spBadge"></span></button>
       <button data-ir="saida"><span class="ic">🧾</span><span>SAÍDA POR PEDIDO<small>Venda sem NF: amarrar a caixa ao pedido</small></span></button>
       <button data-ir="inventario"><span class="ic">📋</span><span>INVENTÁRIO<small>Contar o que está no depósito</small></span></button>
       <button data-ir="entrada"><span class="ic">📦</span><span>ENTRADA<small>Conferir as caixas batizadas</small></span></button>
@@ -183,6 +206,20 @@
     </div>
     <p class="muted">Bipou a caixa errada? Toque no serial dela, embaixo da NF, para tirar só aquela caixa ou movê-la para a NF aberta (funciona em qualquer aparelho, até o Novo dia).</p>
     <div class="card hidden" id="xResumo"></div>
+  </section>
+
+  <!-- SEPARAÇÃO das vendas por transportadora (27/11/2026) -->
+  <section id="t-separacao" class="hidden">
+    <div class="card">
+      <div class="row" style="justify-content:space-between;margin-top:0">
+        <div><span class="grande" id="spCont">0/0</span> <span class="muted">NFs separadas</span></div>
+        <div class="chips" id="spFiltro"><button data-spf="pend">A separar</button><button data-spf="ok">Separadas</button><button data-spf="todas">Todas</button></div>
+      </div>
+      <div id="spTransp" class="muted"></div>
+      <p class="muted" style="margin:6px 0 0">Vendas sem etiqueta de marketplace (venda direta, B2B). Toque em cada produto quando separar. NF nova aparece sozinha quando o faturista adiciona o lote (XML).</p>
+    </div>
+    <div id="spMsg" class="aviso"></div>
+    <div id="spLista"></div>
   </section>
 
   <!-- SAÍDA POR PEDIDO, venda sem NF (25/11/2026) -->
@@ -314,7 +351,7 @@
 // Endereço /exec da implantação do projeto do Painel com acesso "Qualquer pessoa".
 const API_URL = 'https://script.google.com/macros/s/AKfycbxoa2FBttPSApIpOeLxBMWcg1tRoXlzQk5AEbdI1fBE7j2pJ9yeWC6-Zm0pifDcRkW8/exec';
 const POLL_MS = 20000;
-const TITULOS = { menu: 'Leitor Sixxis', expedicao: 'Expedição', saida: 'Saída por pedido', inventario: 'Inventário', entrada: 'Entrada', devolucao: 'Devoluções', situacao: 'Situação', batismo: 'Batismo' };
+const TITULOS = { menu: 'Leitor Sixxis', expedicao: 'Expedição', separacao: 'Separação', saida: 'Saída por pedido', inventario: 'Inventário', entrada: 'Entrada', devolucao: 'Devoluções', situacao: 'Situação', batismo: 'Batismo' };
 const ST = { BAT: 'BATIZADA', EST: 'EM ESTOQUE', EXP: 'EXPEDIDA', NL: 'NÃO LOCALIZADA', BX: 'BAIXADA' };
 
 const $ = id => document.getElementById(id);
@@ -376,6 +413,9 @@ function normalizar(r) {
   (r.un || []).forEach(u => { s.un[u[0]] = { sku: u[1], n: u[2], b: u[3], s: u[4], nf: u[5], chave: u[6], ped: u[7] || '', saiu: u[8] || '' }; });
   s.rom = { id: r.rom.id, lotes: r.rom.lotes || [], nfs: {}, ordem: [], envio: {} };
   (r.rom.nfs || []).forEach(n => { s.rom.nfs[n.chave] = n; s.rom.ordem.push(n.chave); if (n.envio) s.rom.envio[n.envio] = n.chave; });
+  // separação das vendas por transportadora (27/11/2026): chave → NF da aba SERIAL_SEPARACAO (só as do romaneio aberto)
+  s.sep = {}; s.sepOrd = []; s.sepErro = r.sep && r.sep.erro ? r.sep.erro : ''; s.sepAtivo = Array.isArray(r.sep);
+  if (Array.isArray(r.sep)) r.sep.forEach(e => { if (!s.sep[e.chave]) s.sepOrd.push(e.chave); s.sep[e.chave] = e; });
   s.inv = r.inv ? { id: r.inv.id, ini: r.inv.ini, b: {}, ord: r.inv.ord.slice() } : null;
   if (s.inv) s.inv.ord.forEach(x => s.inv.b[x] = 1);
   return s;
@@ -406,12 +446,12 @@ async function carregar(forcar) {
   if (carregando || !K) return; carregando = true;
   try {
     const r = await api('estado', { ver: forcar || !S ? '' : S.ver });
-    if (!r.mesmo) { S = normalizar(r); FILA.forEach(aplicar); ls.set('ldr_ultimo', r); ls.set('ldr_ultimo_k', K); render(); }
+    if (!r.mesmo) { S = normalizar(r); FILA.forEach(aplicar); spReaplicar(); ls.set('ldr_ultimo', r); ls.set('ldr_ultimo_k', K); render(); }
     atualizando = false; online(true);
   } catch (e) {
     if (e.semAcesso) return semAcesso(e.message);
     online(false);
-    if (!S) { const c = ls.get('ldr_ultimo', null); if (c) { S = normalizar(c); FILA.forEach(aplicar); render(); } else $('inicioTxt').textContent = 'Sem conexão com a planilha: ' + e.message; }
+    if (!S) { const c = ls.get('ldr_ultimo', null); if (c) { S = normalizar(c); FILA.forEach(aplicar); spReaplicar(); render(); } else $('inicioTxt').textContent = 'Sem conexão com a planilha: ' + e.message; }
   } finally { carregando = false; if (atualizando) { atualizando = false; syncTxt(); } }
 }
 let enviando = false, timerEnvio = null;
@@ -462,7 +502,7 @@ function semAcesso(t) { mostrarLogin(t); }
 function mostrarLogin(t) {
   try { if (ligada) desligarCamera(); } catch (e) {}
   S = null; TELA = 'menu'; ABERTA = null; ULTIMAS = [];
-  ['t-inicio', 't-menu', 't-expedicao', 't-saida', 't-inventario', 't-entrada', 't-devolucao', 't-situacao', 't-batismo', 'leitura'].forEach(id => $(id).classList.add('hidden'));
+  ['t-inicio', 't-menu', 't-expedicao', 't-separacao', 't-saida', 't-inventario', 't-entrada', 't-devolucao', 't-situacao', 't-batismo', 'leitura'].forEach(id => $(id).classList.add('hidden'));
   $('hVoltar').classList.add('hidden'); $('hTit').textContent = TITULOS.menu; $('hQuem').textContent = '';
   $('t-login').classList.remove('hidden');
   $('lgMsg').textContent = t || ''; $('lgMsg').classList.toggle('hidden', !t);
@@ -535,7 +575,7 @@ function ir(t) {
   if (!S) return;
   if (t !== 'menu' && !podeTela(t)) return;
   TELA = t;
-  ['inicio', 'login', 'menu', 'expedicao', 'saida', 'inventario', 'entrada', 'devolucao', 'situacao', 'batismo'].forEach(x => $('t-' + x).classList.toggle('hidden', x !== t));
+  ['inicio', 'login', 'menu', 'expedicao', 'separacao', 'saida', 'inventario', 'entrada', 'devolucao', 'situacao', 'batismo'].forEach(x => $('t-' + x).classList.toggle('hidden', x !== t));
   $('leitura').classList.toggle('hidden', !['expedicao', 'saida', 'inventario', 'entrada', 'devolucao', 'situacao'].includes(t));
   $('hVoltar').classList.toggle('hidden', t === 'menu');
   $('hTit').textContent = TITULOS[t];
@@ -546,7 +586,7 @@ function ir(t) {
   if (t === 'saida') saiAbrir();
   render();
 }
-const podeTela = t => t === 'batismo' ? faturista() : t === 'devolucao' ? pode('expedicao') || faturista() : t === 'saida' ? pode('saida_pedido') || faturista() : pode(t);
+const podeTela = t => t === 'batismo' ? faturista() : t === 'devolucao' || t === 'separacao' ? pode('expedicao') || faturista() : t === 'saida' ? pode('saida_pedido') || faturista() : pode(t);
 document.querySelectorAll('[data-ir]').forEach(b => b.onclick = () => ir(b.dataset.ir));
 $('hVoltar').onclick = () => ir('menu');
 
@@ -735,7 +775,14 @@ function lerXml(txt) {
   const juntos = {};
   Array.from(inf.getElementsByTagName('det')).forEach(d => { const p = d.getElementsByTagName('prod')[0];
     const sku = tag(p, 'cProd').toUpperCase(), q = parseFloat(tag(p, 'qCom')) || 0;
-    if (juntos[sku]) juntos[sku].qtd += q; else juntos[sku] = { sku: sku, qtd: q }; });
+    // desc e un (27/11/2026): descrição e unidade do item, para a tela Separação (o romaneio continua só com SKU e qtd)
+    if (juntos[sku]) juntos[sku].qtd += q; else juntos[sku] = { sku: sku, qtd: q, desc: tag(p, 'xProd'), un: tag(p, 'uCom') }; });
+  // transporte (27/11/2026): transportadora, modalidade do frete, volumes e peso bruto (somando todas as tags <vol>)
+  const tr = inf.getElementsByTagName('transp')[0], tra = tr && tr.getElementsByTagName('transporta')[0];
+  let qVol = 0, pesoB = 0;
+  if (tr) Array.from(tr.getElementsByTagName('vol')).forEach(v => { qVol += parseInt(tag(v, 'qVol'), 10) || 0; pesoB += parseFloat(tag(v, 'pesoB')) || 0; });
+  const tot = inf.getElementsByTagName('ICMSTot')[0];   // valor do frete da NF (total/ICMSTot/vFrete)
+  const transp = { nome: tag(tra, 'xNome'), frete: tag(tr, 'modFrete'), vol: qVol, peso: Math.round(pesoB * 1000) / 1000, vFrete: parseFloat(tag(tot, 'vFrete')) || 0 };
   // venda: destinatário (nome, cidade, UF — o CPF/CNPJ não é guardado), pedido, canal e vendedor
   const dest = inf.getElementsByTagName('dest')[0];
   const cpl = tag(inf.getElementsByTagName('infAdic')[0], 'infCpl').replace(/<[^>]*>/g, ' | ');
@@ -747,7 +794,7 @@ function lerXml(txt) {
   const pedido = [mPed ? mPed[1] : '', mLoja && (!mPed || mLoja[1] !== mPed[1]) ? 'loja ' + mLoja[1] : ''].filter(Boolean).join(' · ');
   return { tipo: 'nfe', nf: { chave, nf: tag(ide, 'nNF'), serie: tag(ide, 'serie'), cnpj: tag(emit, 'CNPJ'), loja: tag(emit, 'xNome'),
     emi: tag(ide, 'dhEmi').slice(0, 10).split('-').reverse().join('/'), itens: Object.values(juntos),
-    cli: tag(dest, 'xNome'), mun: tag(dest, 'xMun'), uf: tag(dest, 'UF'), pedido, canal, vend: mVend ? mVend[1].trim() : '' } };
+    cli: tag(dest, 'xNome'), mun: tag(dest, 'xMun'), uf: tag(dest, 'UF'), pedido, canal, vend: mVend ? mVend[1].trim() : '', transp } };
 }
 async function arquivos(files) {
   const xmls = [], pdfs = [];
@@ -804,9 +851,185 @@ $('rArq').onchange = async function () {
     if (mlSem.length) avisos.push('⚠ ' + mlSem.length + ' NF(s) do Mercado Livre sem etiqueta ligada (' + mlSem.slice(0, 5).map(n => n.nf).join(', ') + (mlSem.length > 5 ? '…' : '') + '): adicione o PDF da etiqueta casada');
     const tit = r.add ? 'Lote ' + r.lote + ': ' + r.add + ' NF(s) no romaneio' : 'Nenhuma NF nova';
     msg(avisos.length ? 'av' : r.add || r.lig || r.canc ? 'ok' : 'av', tit,
-      avisos.concat([r.dup ? r.dup + ' já estavam' : '', ign ? ign + ' XML(s) ignorado(s) (entrada, não autorizada ou outro tipo)' : '', r.canc ? r.canc + ' cancelada(s)' : '', r.lig ? r.lig + ' etiqueta(s) ML ligada(s)' : '']).filter(Boolean).join(' · '));
+      avisos.concat([r.dup ? r.dup + ' já estavam' : '', ign ? ign + ' XML(s) ignorado(s) (entrada, não autorizada ou outro tipo)' : '', r.canc ? r.canc + ' cancelada(s)' : '', r.lig ? r.lig + ' etiqueta(s) ML ligada(s)' : '',
+        r.sep && r.sep.add ? '🧺 ' + r.sep.add + ' na Separação' : '', r.sepErro ? '⚠ Separação: ' + r.sepErro : '']).filter(Boolean).join(' · '));
+    // transportadora e volumes vêm só do XML: NF da separação sem eles vira aviso (27/11/2026)
+    const sT = (r.sep && r.sep.semTransp) || [], sV = (r.sep && r.sep.semVol) || [], sF = (r.sep && r.sep.semFrete) || [];
+    if (sT.length || sV.length || sF.length) msg('er', '⚠ NF da separação com dado faltando no XML',
+      [sT.length ? 'Sem transportadora: NF ' + sT.join(', ') : '', sV.length ? 'Volumes zerados: NF ' + sV.join(', ') : '', sF.length ? 'Frete zerado: NF ' + sF.join(', ') : '', tit].filter(Boolean).join(' · '));
   } catch (e) { msg('er', 'Não consegui adicionar o lote', e.message); }
 };
+
+// ================= SEPARAÇÃO das vendas por transportadora (27/11/2026) =================
+// NFs sem etiqueta de marketplace (venda direta / B2B), vindas do mesmo "Adicionar lote (XML)". O servidor
+// (Separacao.gs) guarda na aba SERIAL_SEPARACAO a transportadora, o frete, os volumes, o peso e os itens com descrição.
+// Quem separa toca em cada produto e, no fim, informa os volumes e conclui. Precisa de internet (não usa a fila das
+// bipagens): cada toque já aparece marcado e vai para a planilha em ordem; se a planilha recusar, a tela se corrige.
+const SP_ST = { PEND: 'PENDENTE', OK: 'SEPARADA', FORA: 'FORA DA LISTA' };
+let SP_FILTRO = ls.get('ldr_spf', 'pend'), SP_ADIADO = false;
+const SP_PEND = {}, SP_Q = {}, SP_VOL = {};   // por NF: mudanças locais ainda não confirmadas · fila de envio · volumes digitados
+const spCanc = e => { const n = S.rom.nfs[e.chave]; return !!(n && n.canc); };
+const spConta = e => !spCanc(e) && e.sit !== SP_ST.FORA;   // entra nos totais
+function spAviso(t, tipo) {
+  const m = $('spMsg'); m.textContent = t || ''; m.style.background = tipo === 'er' ? '#fde4e4' : tipo === 'ok' ? '#e3f3e5' : '';
+  clearTimeout(spAviso.t); if (t) spAviso.t = setTimeout(() => { m.textContent = ''; }, 7000);
+}
+// depois de recarregar da planilha, refaz por cima o que este aparelho marcou e ainda não foi confirmado
+function spReaplicar() { Object.keys(SP_PEND).forEach(ch => { const e = S && S.sep[ch]; if (e) SP_PEND[ch].forEach(f => f(e)); }); }
+function spOp(ch, op, extra, local) {
+  const e = S.sep[ch]; if (!e) return Promise.resolve();
+  if (local) { local(e); (SP_PEND[ch] = SP_PEND[ch] || []).push(local); }
+  sepRender(true);
+  const vez = (SP_Q[ch] || Promise.resolve()).then(async () => {
+    try {
+      const r = await api('separacao', Object.assign({ op: op, chave: ch }, extra || {}));
+      if (local && SP_PEND[ch]) { SP_PEND[ch].shift(); if (!SP_PEND[ch].length) delete SP_PEND[ch]; }
+      if (S && r.e) { S.sep[ch] = r.e; (SP_PEND[ch] || []).forEach(f => f(S.sep[ch])); }
+      online(true);
+      return r;
+    } catch (err) {
+      if (local && SP_PEND[ch]) { SP_PEND[ch].shift(); if (!SP_PEND[ch].length) delete SP_PEND[ch]; }
+      if (err.semAcesso) { semAcesso(err.message); return null; }
+      spAviso('Não gravou na planilha: ' + err.message, 'er'); som('er');
+      await carregar(true);   // volta a tela para o que está na planilha
+      return null;
+    } finally { sepRender(true); }
+  });
+  SP_Q[ch] = vez.catch(() => {});
+  return vez;
+}
+function spCard(e) {
+  const canc = spCanc(e), ok = e.sit === SP_ST.OK, fora = e.sit === SP_ST.FORA, n = S.rom.nfs[e.chave], fat = faturista();
+  const marc = e.itens.filter((x, i) => e.seps[i]).length, todos = marc === e.itens.length, trava = ok || fora || canc;
+  // caixas com serial já bipadas na Expedição, por SKU (só informação: a separação não exige)
+  const prog = {}; if (n && !canc) progresso(n).forEach(p => { if (p.serial) prog[p.sku] = p; });
+  const ped = n && n.ped ? n.ped : (String(e.ped || '').match(/^\d+/) || [])[0] || '';
+  const tag = canc ? '<span class="tag t-er">CANCELADA</span>' : ok ? '<span class="tag t-ok">SEPARADA</span>' : fora ? '<span class="tag t-cz">FORA DA LISTA</span>' : '<span class="tag t-av">' + marc + '/' + e.itens.length + ' produtos</span>';
+  let h = '<div class="card sp' + (canc ? ' canc' : ok ? ' ok' : fora ? ' fora' : '') + '">' +
+    '<div class="topo"><b class="nf">NF ' + esc(e.nf) + '</b><span class="muted">' + esc(e.loja) + '</span>' + (ped ? '<span class="ped">Ped. ' + esc(ped) + '</span>' : '') + tag + '</div>' +
+    '<div class="cli"><b>' + esc(e.cli || 'Cliente não informado') + '</b>' + (e.cid ? ' · ' + esc(e.cid) : '') + '</div>' +
+    (e.vend ? '<div class="muted">Vendedor: ' + esc(e.vend) + '</div>' : '');
+  // transporte
+  const brl = v => 'R$ ' + Number(v).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const info = [e.frete ? esc(e.frete) : '', e.vFrete > 0 ? 'frete ' + brl(e.vFrete) : '', e.vol ? e.vol + ' vol. na NF' : '', e.peso ? fmtQ(e.peso) + ' kg' : ''].filter(Boolean).join(' · ');
+  // transportadora, volumes e valor do frete vêm só do XML: faltando, é aviso (a nota precisa sair com eles)
+  const semT = !e.transp, semV = !(e.vol > 0), semF = !(e.vFrete > 0);
+  const falt = [semT ? 'a transportadora' : '', semV ? 'os volumes' : '', semF ? 'o valor do frete' : ''].filter(Boolean);
+  h += '<div class="tr' + (falt.length ? ' sem' : '') + '">🚚 ' + (semT ? '<b style="color:var(--er)">⚠ NF sem transportadora</b>' : '<b>' + esc(e.transp) + '</b>') +
+    (info ? '<br><span class="muted">' + info + '</span>' : '') +
+    (semV ? '<br><b style="color:var(--er)">⚠ NF sem quantidade de volumes</b>' : '') +
+    (semF ? '<br><b style="color:var(--er)">⚠ NF com frete zerado</b>' : '') +
+    (falt.length ? '<br><span class="muted">A nota precisa sair com ' + falt.join(', ').replace(/, ([^,]*)$/, ' e $1') + ': avise o faturista.</span>' : '') + '</div>';
+  // produtos
+  h += e.itens.map((it, i) => {
+    const on = !!e.seps[i], p = prog[it.s];
+    const sub = [esc(it.s), on ? '✓ ' + esc(e.seps[i]) : '', p ? (p.feito >= p.qtd ? '✅ ' : '') + p.feito + '/' + fmtQ(p.qtd) + ' caixa(s) bipada(s) na expedição' : ''].filter(Boolean).join(' · ');
+    return '<button type="button" class="sp-it' + (on ? ' on' : '') + '" data-spi="' + i + '"' + (trava ? ' disabled' : '') + '>' +
+      '<span class="cx">' + (on ? '✓' : '') + '</span><span><span class="q">' + fmtQ(it.q) + ' ' + esc((it.u || 'un').toLowerCase()) + '</span> ' + esc(it.d || it.s) + '<small>' + sub + '</small></span></button>';
+  }).join('');
+  // rodapé
+  if (canc) h += '<div class="faixa" style="background:#fde4e4">NF cancelada: não separar, não expedir.</div>';
+  else if (fora) h += '<div class="muted" style="margin-top:6px">Tirada da lista' + (e.por ? ' por ' + esc(e.por) + (e.em ? ' em ' + esc(e.em) : '') : '') + '.</div>' +
+    (fat ? '<div class="fim"><button class="btn claro" data-spa="voltar">Voltar para a lista</button></div>' : '');
+  else if (ok) h += '<div class="faixa">✅ Separada por <b>' + esc(e.por) + '</b>' + (e.em ? ' em ' + esc(e.em) : '') + ' · <b>' + e.volSep + '</b> volume(s)' +
+    (e.vol && e.vol !== e.volSep ? ' <span class="tag t-cz">nota: ' + e.vol + ' vol.</span>' : '') + '</div>' +
+    '<div class="fim"><button class="btn claro" data-spa="reabrir">Reabrir</button></div>';
+  else {
+    // volumes (27/11/2026, igual ao DANFE por volume do Etiqueta Casada): começa com os volumes da nota (ou, sem eles, com o
+    // total de unidades, como lá) e quem separa ajusta no − / + ou digita. O digitado (SP_VOL) volta depois de redesenhar.
+    const un = Math.round(e.itens.reduce((t, x) => t + (Number(x.q) || 0), 0)), v = e.vol > 0 ? e.vol : (un || 1);
+    h += todos ? '<div class="fim"><span class="muted" style="width:100%">Volumes</span>' +
+      '<button class="btn claro sp-pm" data-spa="menos" aria-label="Menos um volume">−</button>' +
+      '<input class="txt" id="spVol' + e.chave + '" data-spvol="1" type="number" min="1" max="999" inputmode="numeric" value="' + v + '">' +
+      '<button class="btn claro sp-pm" data-spa="mais" aria-label="Mais um volume">+</button>' +
+      '<span class="muted">NF com ' + un + ' un.' + (e.vol > 0 ? ' · nota: ' + e.vol + ' vol.' : '') + '</span></div>' +
+      '<div class="fim"><button class="btn" data-spa="concluir" style="flex:1">Separação concluída</button></div>'
+      : '<p class="muted" style="margin:8px 0 0">Falta(m) ' + (e.itens.length - marc) + ' produto(s).</p>';
+    if (fat) h += '<div class="fim"><button class="btn claro" data-spa="fora" style="padding:6px 10px;font-size:13px">Tirar da lista</button><span class="muted">ex.: cliente retira</span></div>';
+  }
+  return h.replace('<div class="card sp', '<div data-ch="' + e.chave + '" class="card sp') + '</div>';
+}
+function sepRender() {
+  if (!S) return;
+  const todas = S.sepOrd.map(c => S.sep[c]).filter(Boolean), conta = todas.filter(spConta);
+  const nOk = conta.filter(e => e.sit === SP_ST.OK).length, nPend = conta.length - nOk;
+  $('spBadge').textContent = nPend ? nPend : ''; $('spBadge').classList.toggle('hidden', !nPend || !podeTela('separacao'));
+  if (TELA !== 'separacao') return;
+  $('spCont').textContent = nOk + '/' + conta.length;
+  document.querySelectorAll('[data-spf]').forEach(b => b.classList.toggle('on', b.dataset.spf === SP_FILTRO));
+  // resumo por transportadora (para a coleta): NFs e volumes (separados, ou os da NF enquanto não separou)
+  const porT = {};
+  conta.forEach(e => { const t = e.transp || 'sem transportadora'; const x = porT[t] = porT[t] || { nf: 0, ok: 0, vol: 0 };
+    x.nf++; if (e.sit === SP_ST.OK) x.ok++; x.vol += e.sit === SP_ST.OK ? e.volSep : (e.vol || 0); });
+  $('spTransp').innerHTML = Object.keys(porT).sort().map(t => (t === 'sem transportadora' ? '<b style="color:var(--er)">⚠ sem transportadora</b>: ' : '🚚 <b>' + esc(t) + '</b>: ') + porT[t].ok + '/' + porT[t].nf + ' NF separada(s)' + (porT[t].vol ? ' · ' + porT[t].vol + ' vol.' : '')).join('<br>');
+  let h = '', cards = null;
+  if (!S.sepAtivo) h = '<div class="aviso">A separação ainda não está instalada no servidor (arquivo Separacao.gs no projeto do Painel).</div>';
+  else if (S.sepErro) h = '<div class="aviso">Erro ao ler a separação: ' + esc(S.sepErro) + '</div>';
+  else {
+    const vis = todas.filter(e => SP_FILTRO === 'todas' ? true : SP_FILTRO === 'ok' ? e.sit === SP_ST.OK && !spCanc(e) : e.sit === SP_ST.PEND && !spCanc(e));
+    // pendentes primeiro, por transportadora e NF; canceladas e fora da lista no fim
+    const peso = e => spCanc(e) ? 3 : e.sit === SP_ST.FORA ? 2 : e.sit === SP_ST.OK ? 1 : 0;
+    vis.sort((a, b) => peso(a) - peso(b) || (a.transp || '~').localeCompare(b.transp || '~') || (Number(a.nf) || 0) - (Number(b.nf) || 0));
+    if (vis.length) cards = vis.map(e => ({ ch: e.chave, html: spCard(e) }));
+    else if (!todas.length) h = '<div class="card"><p class="muted" style="margin:0">Nenhuma venda por transportadora no romaneio aberto. Elas entram quando o faturista adiciona o lote (XML).' +
+      (faturista() ? ' NF que já estava no romaneio antes desta versão: adicione o XML dela de novo (o leitor diz "já estava", mas ela entra na separação).' : '') + '</p></div>';
+    else h = '<div class="card"><p style="margin:0">' + (SP_FILTRO === 'pend' ? '✅ Nada a separar agora.' : 'Nenhuma NF separada ainda.') + '</p></div>';
+  }
+  spPintar(cards || [{ ch: '', html: h }]);
+}
+// Redesenha só o cartão que mudou (o resto fica como está: um toque em andamento não se perde) e devolve aos campos
+// de volumes o que já foi digitado. Cartão com o campo em uso só é redesenhado quando a pessoa sai dele.
+const SP_HTML = {};
+function spPintar(lista) {
+  const box = $('spLista'), ord = lista.map(x => x.ch).join(','), ativo = document.activeElement;
+  const restaurar = el => el.querySelectorAll('[data-spvol]').forEach(i => { const c = i.closest('[data-ch]'); if (c && SP_VOL[c.dataset.ch] != null) i.value = SP_VOL[c.dataset.ch]; });
+  SP_ADIADO = false;
+  if (box.dataset.ord !== ord || !lista[0].ch) {
+    if (box.dataset.ord === ord && SP_HTML[''] === lista[0].html) return;
+    if (ativo && ativo.tagName === 'INPUT' && box.contains(ativo)) { SP_ADIADO = true; return; }
+    box.innerHTML = lista.map(x => x.html).join(''); box.dataset.ord = ord;
+    lista.forEach(x => { SP_HTML[x.ch] = x.html; }); restaurar(box); return;
+  }
+  lista.forEach(x => {
+    if (SP_HTML[x.ch] === x.html) return;
+    const velho = box.querySelector('[data-ch="' + x.ch + '"]'); if (!velho) return;
+    if (ativo && ativo.tagName === 'INPUT' && velho.contains(ativo)) { SP_ADIADO = true; return; }
+    const t = document.createElement('div'); t.innerHTML = x.html;
+    const novo = t.firstElementChild; velho.replaceWith(novo); SP_HTML[x.ch] = x.html; restaurar(novo);
+  });
+}
+document.querySelectorAll('[data-spf]').forEach(b => b.onclick = () => { SP_FILTRO = b.dataset.spf; ls.set('ldr_spf', SP_FILTRO); sepRender(true); });
+$('spLista').addEventListener('focusout', () => setTimeout(() => { if (SP_ADIADO) sepRender(true); }, 0));
+$('spLista').addEventListener('input', e => { const c = e.target.closest('[data-ch]'); if (e.target.dataset.spvol && c) SP_VOL[c.dataset.ch] = e.target.value; });
+$('spLista').addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const c = e.target.closest('[data-ch]'); if (!c) return;
+  const b = c.querySelector('[data-spa="concluir"]'); if (b) { e.preventDefault(); b.click(); }
+});
+$('spLista').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b || b.disabled) return;
+  const c = b.closest('[data-ch]'), ch = c && c.dataset.ch, en = ch && S.sep[ch]; if (!en) return;
+  if (b.dataset.spi != null) {   // marca / desmarca um produto
+    const i = Number(b.dataset.spi), v = !en.seps[i], quem = S.quem.nome + ' ' + agoraTxt();
+    if (navigator.vibrate) navigator.vibrate(v ? 40 : [30, 40, 30]);
+    spOp(ch, 'item', { i: i, v: v }, x => { if (v) { if (!x.seps[i]) x.seps[i] = quem; } else delete x.seps[i]; });
+    return;
+  }
+  const a = b.dataset.spa;
+  if (a === 'menos' || a === 'mais') {   // − / + dos volumes
+    const inp = c.querySelector('[data-spvol]'); if (!inp) return;
+    const v = Math.min(999, Math.max(1, (Math.floor(Number(inp.value)) || 1) + (a === 'mais' ? 1 : -1)));
+    inp.value = v; SP_VOL[ch] = String(v); return;
+  }
+  if (a === 'concluir') {
+    const inp = c.querySelector('[data-spvol]'), vol = Math.floor(Number(inp && inp.value) || 0);
+    if (vol < 1) { spAviso('Informe quantos volumes ficaram antes de concluir.', 'er'); som('er'); if (inp) inp.focus(); return; }
+    if (inp) inp.blur();
+    spOp(ch, 'concluir', { vol: vol }).then(r => { if (r) { delete SP_VOL[ch]; spAviso('✅ NF ' + en.nf + ' separada · ' + vol + ' volume(s)', 'ok'); som('ok'); } });
+  } else if (a === 'reabrir') confirmar(b, 'Reabrir', () => spOp(ch, 'reabrir').then(r => { if (r) spAviso('NF ' + en.nf + ' reaberta: os produtos marcados continuam marcados.'); }));
+  else if (a === 'fora') confirmar(b, 'Tirar da lista', () => spOp(ch, 'fora').then(r => { if (r) spAviso('NF ' + en.nf + ' tirada da lista (veja em "Todas").'); }));
+  else if (a === 'voltar') spOp(ch, 'voltar').then(r => { if (r) spAviso('NF ' + en.nf + ' voltou para a lista.'); });
+});
 
 // ================= SAÍDA POR PEDIDO, venda sem NF (25/11/2026) =================
 // Filial + nº do pedido do Bling → o servidor (SaidaPedido.gs) procura o pedido na aba da loja e devolve os produtos.
@@ -1313,7 +1536,7 @@ function render() {
   $('hQuem').textContent = S.quem.nome; syncTxt();
   document.querySelectorAll('.menu [data-ir]').forEach(b => { const t = b.dataset.ir, ok = podeTela(t);
     b.classList.toggle('trava', !ok); b.disabled = !ok; b.classList.toggle('hidden', (t === 'batismo' || t === 'saida') && !ok);
-    b.querySelector('.ic').textContent = ok ? { expedicao: '🚚', saida: '🧾', inventario: '📋', entrada: '📦', devolucao: '↩️', situacao: '📊', batismo: '🏷️' }[t] : '🔒'; });
+    b.querySelector('.ic').textContent = ok ? { expedicao: '🚚', separacao: '🧺', saida: '🧾', inventario: '📋', entrada: '📦', devolucao: '↩️', situacao: '📊', batismo: '🏷️' }[t] : '🔒'; });
   // devoluções aguardando NF-e (só o faturista vê o número)
   const nAg = faturista() && DEVL && DEVL.aguard ? DEVL.aguard.length : 0;
   $('devBadge').textContent = nAg ? nAg + ' NF-e' : ''; $('devBadge').classList.toggle('hidden', !nAg);
@@ -1338,11 +1561,15 @@ function render() {
   $('rLin').innerHTML = todas.map(n => {
     if (n.canc) return '<tr class="canc"><td><b>' + esc(n.nf) + '</b><div>' + esc(n.loja) + '</div>' + pedTxt(n) + '</td><td colspan="3"><b>CANCELADA</b> — não expedir</td></tr>';
     const p = progresso(n), done = completo(n), ab = ABERTA === n.chave && !done, bx = cxNF[n.chave] || {};
-    return '<tr class="' + (done ? 'feita' : ab ? 'aberta' : '') + '"><td><b>' + esc(n.nf) + '</b><div class="muted">' + esc(n.loja) + '</div>' + pedTxt(n) + '<span class="tag t-cz">' + (n.envio ? 'ML' : 'DANFE') + '</span></td>' +
+    const sp = S.sep[n.chave], spTag = !sp || sp.sit === SP_ST.FORA ? '' : sp.sit === SP_ST.OK ? ' <span class="tag t-ok">separada · ' + sp.volSep + ' vol</span>' : ' <span class="tag t-av">a separar</span>';
+    return '<tr class="' + (done ? 'feita' : ab ? 'aberta' : '') + '"><td><b>' + esc(n.nf) + '</b><div class="muted">' + esc(n.loja) + '</div>' + pedTxt(n) + '<span class="tag t-cz">' + (n.envio ? 'ML' : 'DANFE') + '</span>' + spTag + '</td>' +
       '<td>' + p.map(x => '<div><b>' + esc(x.serial ? pref(x.sku) : x.sku) + '</b> × ' + fmtQ(x.qtd) + (x.serial ? '' : ' <span class="tag t-av">pela NF</span>') +
         (bx[x.sku] ? bx[x.sku].sort().map(s => '<button type="button" class="sers" data-desf="' + esc(s) + '">' + esc(s) + '<span class="x">✕</span></button>').join('') : '') + '</div>').join('') + '</td>' +
       '<td class="ck">' + (n.etq ? '✅' : '⬜') + '</td><td class="ck">' + (done ? '✅' : p.some(x => x.serial && x.feito) ? p.filter(x => x.serial).map(x => x.feito + '/' + fmtQ(x.qtd)).join(' ') : '⬜') + '</td></tr>';
   }).join('');
+
+  // separação (27/11/2026)
+  sepRender();
 
   // inventário
   // lista de produtos em uma linha: "Descrição (SKU)", em ordem alfabética da descrição (SERIAL_MAPA, coluna C)
