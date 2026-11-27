@@ -108,23 +108,30 @@
   /* separação das vendas por transportadora (27/11/2026) */
   .sp { border-left: 5px solid var(--av); }
   .sp.ok { border-left-color: var(--ok); } .sp.fora { border-left-color: #b0b8c1; opacity: .75; } .sp.canc { border-left-color: var(--er); }
-  .sp .topo { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
-  .sp .topo b.nf { font-size: 17px; }
-  .sp .cli { font-size: 14px; margin-top: 3px; }
-  .sp .tr { margin: 8px 0 4px; padding: 8px 10px; border-radius: 8px; background: #eef3fb; font-size: 14px; }
+  /* cartão compacto (27/11/2026): mais NFs na tela */
+  .card.sp { padding: 8px 10px; margin: 6px 0; }
+  .sp .topo { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; font-size: 13px; }
+  .sp .topo b.nf { font-size: 15px; }
+  .sp .topo .ped { margin-top: 0; }
+  .sp .topo .sp-lnk { margin-left: auto; border: 0; background: none; color: #6b7480; font-size: 12px; text-decoration: underline; padding: 0 2px; }
+  .sp .cli { font-size: 13px; margin-top: 1px; line-height: 1.3; }
+  .sp .tr { margin: 4px 0 2px; padding: 4px 8px; border-radius: 6px; background: #eef3fb; font-size: 12.5px; line-height: 1.35; }
   .sp .tr.sem { background: #fff4d6; }
-  .sp .tr b { font-size: 15px; }
-  .sp-it { display: flex; gap: 10px; align-items: flex-start; width: 100%; text-align: left; border: 1px solid #e3e7ec; background: #fff; border-radius: 10px; padding: 10px; margin: 6px 0; font-size: 15px; color: var(--tx); }
-  .sp-it .cx { flex: none; width: 26px; height: 26px; border-radius: 6px; border: 2px solid #9aa3ad; display: grid; place-items: center; font-size: 17px; color: #fff; margin-top: 1px; }
+  .sp .tr b { font-size: 13px; }
+  .sp-it { display: flex; gap: 8px; align-items: center; width: 100%; text-align: left; border: 1px solid #e3e7ec; background: #fff; border-radius: 8px; padding: 5px 8px; margin: 4px 0; font-size: 13.5px; line-height: 1.3; color: var(--tx); }
+  .sp-it .cx { flex: none; width: 22px; height: 22px; border-radius: 5px; border: 2px solid #9aa3ad; display: grid; place-items: center; font-size: 14px; color: #fff; }
   .sp-it.on { background: #eaf6ec; border-color: #bfe3c4; }
   .sp-it.on .cx { background: var(--ok); border-color: var(--ok); }
-  .sp-it .q { font-weight: 800; font-size: 18px; white-space: nowrap; }
-  .sp-it small { display: block; color: #6b7480; font-size: 12.5px; margin-top: 2px; }
+  .sp-it .q { font-weight: 800; font-size: 15px; white-space: nowrap; }
+  .sp-it small { display: block; color: #6b7480; font-size: 11.5px; margin-top: 1px; }
   .sp-it:disabled { color: var(--tx); }
-  .sp .fim { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
-  .sp .fim input { width: 80px; flex: none; text-align: center; font-size: 17px; }
-  .sp .fim .sp-pm { width: 46px; flex: none; font-size: 22px; padding: 6px 0; line-height: 1; }
-  .sp .faixa { background: #eaf6ec; border-radius: 8px; padding: 8px 10px; margin-top: 8px; font-size: 14px; }
+  .sp .fim { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 5px; }
+  .sp .fim input { width: 54px; flex: none; text-align: center; font-size: 15px; padding: 6px 2px; }
+  .sp .fim .sp-pm { width: 34px; flex: none; font-size: 18px; padding: 5px 0; line-height: 1; }
+  .sp .fim .btn { padding: 8px 10px; font-size: 14px; }
+  .sp .dica { font-size: 11.5px; color: #6b7480; margin-top: 2px; }
+  .sp .faixa .sp-lnk { border: 0; background: none; color: #6b7480; font-size: 12px; text-decoration: underline; padding: 0 2px; }
+  .sp .faixa { background: #eaf6ec; border-radius: 6px; padding: 4px 8px; margin-top: 5px; font-size: 12.5px; }
   .sp.col { border-left-color: var(--az); }
   .sp .faixa.col { background: #e8f0fe; }
   .sp-g .topo b { font-size: 16px; }
@@ -882,7 +889,8 @@ $('rArq').onchange = async function () {
 // bipagens): cada toque já aparece marcado e vai para a planilha em ordem; se a planilha recusar, a tela se corrige.
 const SP_ST = { PEND: 'PENDENTE', OK: 'SEPARADA', COL: 'COLETADA', FORA: 'FORA DA LISTA', CANC: 'CANCELADA' };
 const spSep = e => e.sit === SP_ST.OK || e.sit === SP_ST.COL;   // separada (coletada ou esperando a coleta)
-const spGrupo = e => e.mkt ? '🏷 ' + (e.canal || 'Marketplace') : (e.transp || 'Sem transportadora');
+// transportadora agrupada pelo servidor (tg): filiais da mesma transportadora = mesma coleta; SIXXIS = SIXXIS DO BRASIL
+const spGrupo = e => e.mkt ? '🏷 ' + (e.canal || 'Marketplace') : (e.tg || e.transp || 'Sem transportadora');
 const SP_SEL = {}, SP_FORM = {};   // coleta: NFs desmarcadas na lista · motorista/placa/hora digitados, por transportadora
 let SP_FILTRO = ls.get('ldr_spf', 'pend'), SP_ADIADO = false;
 const SP_PEND = {}, SP_Q = {}, SP_VOL = {};   // por NF: mudanças locais ainda não confirmadas · fila de envio · volumes digitados
@@ -924,9 +932,9 @@ function spCard(e) {
   const ped = n && n.ped ? n.ped : (String(e.ped || '').match(/^\d+/) || [])[0] || '';
   const tag = canc ? '<span class="tag t-er">CANCELADA</span>' : col ? '<span class="tag" style="background:#e8f0fe;color:var(--az)">COLETADA</span>' : ok ? '<span class="tag t-ok">SEPARADA</span>' : fora ? '<span class="tag t-cz">FORA DA LISTA</span>' : '<span class="tag t-av">' + marc + '/' + e.itens.length + ' produtos</span>';
   let h = '<div class="card sp' + (canc ? ' canc' : col ? ' col' : ok ? ' ok' : fora ? ' fora' : '') + '">' +
-    '<div class="topo"><b class="nf">NF ' + esc(e.nf) + '</b><span class="muted">' + esc(e.loja) + '</span>' + (ped ? '<span class="ped">Ped. ' + esc(ped) + '</span>' : '') + tag + '</div>' +
-    '<div class="cli"><b>' + esc(e.cli || 'Cliente não informado') + '</b>' + (e.cid ? ' · ' + esc(e.cid) : '') + '</div>' +
-    (e.vend ? '<div class="muted">Vendedor: ' + esc(e.vend) + '</div>' : '');
+    '<div class="topo"><b class="nf">NF ' + esc(e.nf) + '</b><span class="muted">' + esc(e.loja) + '</span>' + (ped ? '<span class="ped">Ped. ' + esc(ped) + '</span>' : '') + tag +
+    (fat && e.sit === SP_ST.PEND && !canc ? '<button class="sp-lnk" data-spa="fora" title="Ex.: cliente retira">tirar da lista</button>' : '') + '</div>' +
+    '<div class="cli"><b>' + esc(e.cli || 'Cliente não informado') + '</b>' + (e.cid ? ' · ' + esc(e.cid) : '') + (e.vend ? ' <span class="muted">· vend. ' + esc(e.vend) + '</span>' : '') + '</div>';
   // transporte
   const brl = v => 'R$ ' + Number(v).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   const info = [e.frete ? esc(e.frete) : '', e.vFrete > 0 ? 'frete ' + brl(e.vFrete) : '', e.vol ? e.vol + ' vol. na NF' : '', e.peso ? fmtQ(e.peso) + ' kg' : ''].filter(Boolean).join(' · ');
@@ -935,11 +943,8 @@ function spCard(e) {
   const semT = !e.mkt && !e.transp, semV = !e.mkt && !(e.vol > 0), semF = !e.mkt && !(e.vFrete > 0);
   const falt = [semT ? 'a transportadora' : '', semV ? 'os volumes' : '', semF ? 'o valor do frete' : ''].filter(Boolean);
   if (e.mkt) h += '<div class="tr">🏷 <b>' + esc(e.canal || 'Marketplace') + '</b> · etiqueta casada' + (n && n.envio ? ' · envio ' + esc(n.envio) : '') + '</div>';
-  else h += '<div class="tr' + (falt.length ? ' sem' : '') + '">🚚 ' + (semT ? '<b style="color:var(--er)">⚠ NF sem transportadora</b>' : '<b>' + esc(e.transp) + '</b>') +
-    (info ? '<br><span class="muted">' + info + '</span>' : '') +
-    (semV ? '<br><b style="color:var(--er)">⚠ NF sem quantidade de volumes</b>' : '') +
-    (semF ? '<br><b style="color:var(--er)">⚠ NF com frete zerado</b>' : '') +
-    (falt.length ? '<br><span class="muted">A nota precisa sair com ' + falt.join(', ').replace(/, ([^,]*)$/, ' e $1') + ': avise o faturista.</span>' : '') + '</div>';
+  else h += '<div class="tr' + (falt.length ? ' sem' : '') + '">🚚 ' + (semT ? '' : '<b>' + esc(e.transp) + '</b>') + (info ? (semT ? '' : ' · ') + '<span class="muted">' + info + '</span>' : '') +
+    (falt.length ? '<br><b style="color:var(--er)">⚠ Nota sem ' + falt.map(x => x.replace(/^(a|os|o) /, '')).join(', ').replace('valor do frete', 'frete') + '</b> <span class="muted">· avise o faturista</span>' : '') + '</div>';
   // produtos
   h += e.itens.map((it, i) => {
     const on = !!e.seps[i], p = prog[it.s];
@@ -952,23 +957,21 @@ function spCard(e) {
   else if (fora) h += '<div class="muted" style="margin-top:6px">Tirada da lista' + (e.por ? ' por ' + esc(e.por) + (e.em ? ' em ' + esc(e.em) : '') : '') + '.</div>' +
     (fat ? '<div class="fim"><button class="btn claro" data-spa="voltar">Voltar para a lista</button></div>' : '');
   else if (col) h += '<div class="faixa">✅ Separada por <b>' + esc(e.por) + '</b>' + (e.em ? ' em ' + esc(e.em) : '') + ' · <b>' + e.volSep + '</b> volume(s)</div>' +
-    '<div class="faixa col">🚛 Coletada ' + esc(e.col) + ' · <b>' + esc(e.mot) + '</b> · placa <b>' + esc(e.placa) + '</b>' + (e.colPor ? '<br><span class="muted">registrada por ' + esc(e.colPor) + '</span>' : '') + '</div>' +
-    (fat ? '<div class="fim"><button class="btn claro" data-spa="desfazerColeta" style="padding:6px 10px;font-size:13px">Desfazer coleta</button></div>' : '');
+    '<div class="faixa col">🚛 Coletada ' + esc(e.col) + ' · <b>' + esc(e.mot) + '</b> · placa <b>' + esc(e.placa) + '</b>' + (e.colPor ? ' <span class="muted">· por ' + esc(e.colPor) + '</span>' : '') +
+    (fat ? ' <button class="sp-lnk" data-spa="desfazerColeta">desfazer</button>' : '') + '</div>';
   else if (ok) h += '<div class="faixa">✅ Separada por <b>' + esc(e.por) + '</b>' + (e.em ? ' em ' + esc(e.em) : '') + ' · <b>' + e.volSep + '</b> volume(s)' +
-    (e.vol && e.vol !== e.volSep ? ' <span class="tag t-cz">nota: ' + e.vol + ' vol.</span>' : '') + '</div>' +
-    '<div class="fim"><button class="btn claro" data-spa="reabrir">Reabrir</button></div>';
+    (e.vol && e.vol !== e.volSep ? ' <span class="tag t-cz">nota: ' + e.vol + ' vol.</span>' : '') + ' <button class="sp-lnk" data-spa="reabrir">reabrir</button></div>';
   else {
     // volumes (27/11/2026, igual ao DANFE por volume do Etiqueta Casada): começa com os volumes da nota (ou, sem eles, com o
     // total de unidades, como lá) e quem separa ajusta no − / + ou digita. O digitado (SP_VOL) volta depois de redesenhar.
     const un = Math.round(e.itens.reduce((t, x) => t + (Number(x.q) || 0), 0)), v = e.vol > 0 ? e.vol : (un || 1);
-    h += todos ? '<div class="fim"><span class="muted" style="width:100%">Volumes</span>' +
+    h += todos ? '<div class="fim"><span class="muted">Vol.</span>' +
       '<button class="btn claro sp-pm" data-spa="menos" aria-label="Menos um volume">−</button>' +
       '<input class="txt" id="spVol' + e.chave + '" data-spvol="1" type="number" min="1" max="999" inputmode="numeric" value="' + v + '">' +
       '<button class="btn claro sp-pm" data-spa="mais" aria-label="Mais um volume">+</button>' +
-      '<span class="muted">NF com ' + un + ' un.' + (e.vol > 0 ? ' · nota: ' + e.vol + ' vol.' : '') + '</span></div>' +
-      '<div class="fim"><button class="btn" data-spa="concluir" style="flex:1">Separação concluída</button></div>'
-      : '<p class="muted" style="margin:8px 0 0">Falta(m) ' + (e.itens.length - marc) + ' produto(s).</p>';
-    if (fat) h += '<div class="fim"><button class="btn claro" data-spa="fora" style="padding:6px 10px;font-size:13px">Tirar da lista</button><span class="muted">ex.: cliente retira</span></div>';
+      '<button class="btn" data-spa="concluir" style="flex:1">Separação concluída</button></div>' +
+      '<div class="dica">NF com ' + un + ' un.' + (e.vol > 0 ? ' · nota: ' + e.vol + ' vol.' : '') + '</div>'
+      : '<div class="dica">Falta(m) ' + (e.itens.length - marc) + ' produto(s).</div>';
   }
   return h.replace('<div class="card sp', '<div data-ch="' + e.chave + '" class="card sp') + '</div>';
 }
@@ -982,7 +985,7 @@ function sepRender() {
   document.querySelectorAll('[data-spf]').forEach(b => b.classList.toggle('on', b.dataset.spf === SP_FILTRO));
   // resumo por transportadora (para a coleta): NFs e volumes (separados, ou os da NF enquanto não separou)
   const porT = {};
-  conta.forEach(e => { const t = e.mkt ? '🏷 ' + (e.canal || 'Marketplace') : e.transp || 'sem transportadora'; const x = porT[t] = porT[t] || { nf: 0, ok: 0, vol: 0 };
+  conta.forEach(e => { const t = e.mkt ? '🏷 ' + (e.canal || 'Marketplace') : e.tg || e.transp || 'sem transportadora'; const x = porT[t] = porT[t] || { nf: 0, ok: 0, vol: 0 };
     x.nf++; if (spSep(e)) x.ok++; x.vol += spSep(e) ? e.volSep : (e.vol || 0); });
   $('spTransp').innerHTML = Object.keys(porT).sort().map(t => (t === 'sem transportadora' ? '<b style="color:var(--er)">⚠ sem transportadora</b>: ' : t.indexOf('🏷') === 0 ? '<b>' + esc(t) + '</b>: ' : '🚚 <b>' + esc(t) + '</b>: ') + porT[t].ok + '/' + porT[t].nf + ' NF separada(s)' + (porT[t].vol ? ' · ' + porT[t].vol + ' vol.' : '')).join('<br>');
   let h = '', cards = null;
