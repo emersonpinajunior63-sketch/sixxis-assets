@@ -952,7 +952,9 @@ function spCard(e) {
   const falt = [semT ? 'a transportadora' : '', semV ? 'os volumes' : '', semF ? 'o valor do frete' : ''].filter(Boolean);
   if (e.mkt) h += '<div class="tr">🏷 <b>' + esc(e.canal || 'Marketplace') + '</b> · etiqueta casada' + (n && n.envio ? ' · envio ' + esc(n.envio) : '') + '</div>';
   else h += '<div class="tr' + (falt.length ? ' sem' : '') + '">🚚 ' + (semT ? '' : '<b>' + esc(e.transp) + '</b>') + (info ? (semT ? '' : ' · ') + '<span class="muted">' + info + '</span>' : '') +
-    (falt.length ? '<br><b style="color:var(--er)">⚠ Nota sem ' + falt.map(x => x.replace(/^(a|os|o) /, '')).join(', ').replace('valor do frete', 'frete') + '</b> <span class="muted">· avise o faturista</span>' : '') + '</div>';
+    (falt.length ? '<br><b style="color:var(--er)">⚠ Nota sem ' + falt.map(x => x.replace(/^(a|os|o) /, '')).join(', ').replace('valor do frete', 'frete') + '</b>' + (fat ? '' : ' <span class="muted">· avise o faturista</span>') : '') +
+    // faturista: define a transportadora que faltou no XML (ou troca a errada) — 27/11/2026
+    (fat && !col && !canc ? ' <button class="sp-lnk" data-spa="transp">' + (semT ? 'definir transportadora' : 'trocar') + '</button>' : '') + '</div>';
   // produtos
   h += e.itens.map((it, i) => {
     const on = !!e.seps[i], p = prog[it.s];
@@ -1106,6 +1108,12 @@ $('spLista').addEventListener('click', e => {
   } else if (a === 'reabrir') confirmar(b, 'Reabrir', () => spOp(ch, 'reabrir').then(r => { if (r) spAviso('NF ' + en.nf + ' reaberta: os produtos marcados continuam marcados.'); }));
   else if (a === 'fora') confirmar(b, 'Tirar da lista', () => spOp(ch, 'fora').then(r => { if (r) spAviso('NF ' + en.nf + ' tirada da lista (veja em "Todas").'); }));
   else if (a === 'voltar') spOp(ch, 'voltar').then(r => { if (r) spAviso('NF ' + en.nf + ' voltou para a lista.'); });
+  else if (a === 'transp') {   // a nota saiu sem transportadora (ou com a errada): "nós mesmos" = SIXXIS DO BRASIL
+    const nome = (prompt('Transportadora da NF ' + en.nf + (en.transp ? ' (hoje: ' + en.transp + ')' : '') + '\nEntrega feita por nós: SIXXIS DO BRASIL', en.transp || 'SIXXIS DO BRASIL') || '').trim().toUpperCase();
+    if (!nome || nome === en.transp) return;
+    if (nome.length < 2) { spAviso('Nome da transportadora muito curto.', 'er'); return; }
+    spOp(ch, 'transp', { transp: nome }, x => { x.transp = nome; x.tg = nome; }).then(r => { if (r) spAviso('🚚 NF ' + en.nf + ': transportadora ' + nome + '. A nota fiscal não muda: se precisar, faça a carta de correção no Bling.', 'ok'); });
+  }
   else if (a === 'desfazerColeta') confirmar(b, 'Desfazer coleta', () => spOp(ch, 'desfazerColeta').then(r => { if (r) spAviso('Coleta da NF ' + en.nf + ' desfeita: ela voltou para "esperando a coleta".'); }));
 });
 
