@@ -957,7 +957,7 @@ function spCard(e) {
   else if (fora) h += '<div class="muted" style="margin-top:6px">Tirada da lista' + (e.por ? ' por ' + esc(e.por) + (e.em ? ' em ' + esc(e.em) : '') : '') + '.</div>' +
     (fat ? '<div class="fim"><button class="btn claro" data-spa="voltar">Voltar para a lista</button></div>' : '');
   else if (col) h += '<div class="faixa">✅ Separada por <b>' + esc(e.por) + '</b>' + (e.em ? ' em ' + esc(e.em) : '') + ' · <b>' + e.volSep + '</b> volume(s)</div>' +
-    '<div class="faixa col">🚛 Coletada ' + esc(e.col) + ' · <b>' + esc(e.mot) + '</b> · placa <b>' + esc(e.placa) + '</b>' + (e.colPor ? ' <span class="muted">· por ' + esc(e.colPor) + '</span>' : '') +
+    '<div class="faixa col">🚛 Coletada ' + esc(e.col) + ' · <b>' + esc(e.mot) + '</b>' + (e.placa ? ' · placa <b>' + esc(e.placa) + '</b>' : '') + (e.colPor ? ' <span class="muted">· por ' + esc(e.colPor) + '</span>' : '') +
     (fat ? ' <button class="sp-lnk" data-spa="desfazerColeta">desfazer</button>' : '') + '</div>';
   else if (ok) h += '<div class="faixa">✅ Separada por <b>' + esc(e.por) + '</b>' + (e.em ? ' em ' + esc(e.em) : '') + ' · <b>' + e.volSep + '</b> volume(s)' +
     (e.vol && e.vol !== e.volSep ? ' <span class="tag t-cz">nota: ' + e.vol + ' vol.</span>' : '') + ' <button class="sp-lnk" data-spa="reabrir">reabrir</button></div>';
@@ -992,7 +992,7 @@ function sepRender() {
   if (!S.sepAtivo) h = '<div class="aviso">A separação ainda não está instalada no servidor (arquivo Separacao.gs no projeto do Painel).</div>';
   else if (S.sepErro) h = '<div class="aviso">Erro ao ler a separação: ' + esc(S.sepErro) + '</div>';
   else {
-    if (SP_FILTRO === 'coleta') { const g = spColeta(todas.filter(spConta)); return spPintar(g.length ? g : [{ ch: '', html: '<div class="card"><p class="muted" style="margin:0">Nenhuma NF separada para coletar.</p></div>' }]); }
+    if (SP_FILTRO === 'coleta') { const g = spColeta(todas.filter(spConta)); return spPintar(g.length ? g : [{ ch: '', html: '<div class="card"><p class="muted" style="margin:0">Nenhuma NF para coletar.</p></div>' }]); }
     const vis = todas.filter(e => SP_FILTRO === 'todas' ? true : SP_FILTRO === 'ok' ? spSep(e) && !spCanc(e) : e.sit === SP_ST.PEND && !spCanc(e));
     // pendentes primeiro, por transportadora e NF; coletadas, canceladas e fora da lista no fim
     const peso = e => spCanc(e) ? 4 : e.sit === SP_ST.FORA ? 3 : e.sit === SP_ST.COL ? 2 : e.sit === SP_ST.OK ? 1 : 0;
@@ -1100,17 +1100,19 @@ function spColeta(lista) {
   lista.forEach(e => { const g = spGrupo(e); (G[g] = G[g] || []).push(e); });
   const nome = g => g.indexOf('🏷') === 0 ? '<b>' + esc(g) + '</b>' : g === 'Sem transportadora' ? '<b style="color:var(--er)">⚠ Sem transportadora</b>' : '🚚 <b>' + esc(g) + '</b>';
   return Object.keys(G).sort((a, b) => { const p = g => G[g].some(e => e.sit === SP_ST.OK) ? 0 : 1; return p(a) - p(b) || a.localeCompare(b); }).map(g => {
-    const L = G[g], prontas = L.filter(e => e.sit === SP_ST.OK).sort((a, b) => (Number(a.nf) || 0) - (Number(b.nf) || 0));
-    const pend = L.filter(e => e.sit === SP_ST.PEND).length, feitas = L.filter(e => e.sit === SP_ST.COL);
-    const sel = prontas.filter(e => SP_SEL[e.chave] !== false), vol = sel.reduce((a, e) => a + e.volSep, 0);
+    // o grupo inteiro pode sair junto (27/11/2026): separadas e também as ainda não separadas, todas marcadas
+    const L = G[g], prontas = L.filter(e => e.sit === SP_ST.OK || e.sit === SP_ST.PEND).sort((a, b) => (a.sit === SP_ST.PEND) - (b.sit === SP_ST.PEND) || (Number(a.nf) || 0) - (Number(b.nf) || 0));
+    const pend = 0, feitas = L.filter(e => e.sit === SP_ST.COL);
+    const volDe = e => e.sit === SP_ST.OK ? e.volSep : (e.vol > 0 ? e.vol : Math.round(e.itens.reduce((a, x) => a + (Number(x.q) || 0), 0)) || 1);
+    const sel = prontas.filter(e => SP_SEL[e.chave] !== false), vol = sel.reduce((a, e) => a + volDe(e), 0);
     let h = '<div class="card sp sp-g' + (prontas.length ? '' : ' ok') + '" data-ch="g:' + esc(g) + '"><div class="topo">' + nome(g) +
       '<span class="tag ' + (prontas.length ? 't-av' : 't-ok') + '">' + (prontas.length ? prontas.length + ' NF(s) para coletar' : 'nada para coletar') + '</span></div>' +
-      (pend ? '<p class="muted" style="margin:6px 0 0">' + pend + ' NF(s) desta transportadora ainda não separada(s).</p>' : '');
+''; void pend;
     if (prontas.length) {
       h += prontas.map(e => '<label class="sp-cl"><input type="checkbox" data-colch="' + e.chave + '"' + (SP_SEL[e.chave] !== false ? ' checked' : '') + '>' +
-        '<span><b>NF ' + esc(e.nf) + '</b> · ' + esc(e.cli || '—') + ' · <b>' + e.volSep + '</b> vol.<small>' + esc(e.loja) + (e.cid ? ' · ' + esc(e.cid) : '') + '</small></span></label>').join('') +
-        '<div class="sp-cf"><div class="l2"><label>Motorista</label><input class="txt" data-colf="mot" placeholder="Nome do motorista" autocomplete="off"></div>' +
-        '<div><label>Placa</label><input class="txt" data-colf="placa" placeholder="ABC1D23" autocapitalize="characters" autocomplete="off" maxlength="8"></div>' +
+        '<span><b>NF ' + esc(e.nf) + '</b> · ' + esc(e.cli || '—') + ' · <b>' + volDe(e) + '</b> vol.' + (e.sit === SP_ST.PEND ? ' <span class="tag t-av">não separada</span>' : '') + '<small>' + esc(e.loja) + (e.cid ? ' · ' + esc(e.cid) : '') + '</small></span></label>').join('') +
+        '<div class="sp-cf"><div class="l2"><label>Motorista / quem levou</label><input class="txt" data-colf="mot" placeholder="Ex.: Jeferson" autocomplete="off"></div>' +
+        '<div><label>Placa (opcional)</label><input class="txt" data-colf="placa" placeholder="ABC1D23" autocapitalize="characters" autocomplete="off" maxlength="8"></div>' +
         '<div><label>Hora (vazio = agora)</label><input class="txt" data-colf="hora" type="time"></div></div>' +
         '<div class="fim"><button class="btn" data-spa="coleta" style="flex:1"' + (sel.length ? '' : ' disabled') + '>Registrar coleta · ' + sel.length + ' NF · ' + vol + ' vol.</button></div>';
     }
@@ -1118,7 +1120,7 @@ function spColeta(lista) {
       const por = {};
       feitas.forEach(e => { const k = e.col + '|' + e.mot + '|' + e.placa; (por[k] = por[k] || []).push(e); });
       h += '<div class="sp-feitas"><span class="muted">Coletadas</span><ul>' + Object.keys(por).sort().map(k => { const x = por[k], e = x[0];
-        return '<li>🚛 <b>' + esc(e.col) + '</b> · ' + esc(e.mot) + ' · ' + esc(e.placa) + '<br><span class="muted">NF ' + x.map(y => esc(y.nf)).join(', ') + ' · ' + x.reduce((a, y) => a + y.volSep, 0) + ' vol.</span></li>'; }).join('') + '</ul></div>';
+        return '<li>🚛 <b>' + esc(e.col) + '</b> · ' + esc(e.mot) + (e.placa ? ' · ' + esc(e.placa) : '') + '<br><span class="muted">NF ' + x.map(y => esc(y.nf)).join(', ') + ' · ' + x.reduce((a, y) => a + y.volSep, 0) + ' vol.</span></li>'; }).join('') + '</ul></div>';
     }
     return { ch: 'g:' + g, html: h + '</div>' };
   });
@@ -1127,16 +1129,16 @@ function spColetar(b, gch) {
   const g = gch.slice(2), f = SP_FORM[gch] || {};
   const card = b.closest('[data-ch]'), val = k => { const i = card.querySelector('[data-colf="' + k + '"]'); return (i ? i.value : f[k] || '').trim(); };
   const mot = val('mot'), placa = val('placa').toUpperCase().replace(/[^A-Z0-9]/g, ''), hora = val('hora');
-  const prontas = S.sepOrd.map(c => S.sep[c]).filter(e => e && e.sit === SP_ST.OK && !spCanc(e) && spGrupo(e) === g && SP_SEL[e.chave] !== false);
+  const prontas = S.sepOrd.map(c => S.sep[c]).filter(e => e && (e.sit === SP_ST.OK || e.sit === SP_ST.PEND) && !spCanc(e) && spGrupo(e) === g && SP_SEL[e.chave] !== false);
   if (!prontas.length) return spAviso('Marque pelo menos uma NF.', 'er');
-  if (mot.length < 2) { spAviso('Informe o nome do motorista.', 'er'); som('er'); return; }
-  if (!/^[A-Z]{3}\d[A-Z0-9]\d{2}$/.test(placa)) { spAviso('Placa inválida: use ABC1234 ou ABC1D23.', 'er'); som('er'); return; }
+  if (mot.length < 2) { spAviso('Informe quem levou (motorista).', 'er'); som('er'); return; }
+  if (placa && !/^[A-Z]{3}\d[A-Z0-9]\d{2}$/.test(placa)) { spAviso('Placa inválida: use ABC1234 ou ABC1D23 (ou deixe em branco).', 'er'); som('er'); return; }
   confirmar(b, b.textContent, async () => {
     b.disabled = true; b.textContent = 'Gravando…';
     try {
       const r = await api('separacao', { op: 'coleta', chaves: prontas.map(e => e.chave), motorista: mot, placa: placa, hora: hora });
       delete SP_FORM[gch]; prontas.forEach(e => delete SP_SEL[e.chave]);
-      spAviso('🚛 ' + r.n + ' NF(s) coletadas · ' + r.vol + ' vol. · ' + r.motorista + ' · ' + r.placa + ' · ' + r.hora, 'ok'); som('ok');
+      spAviso('🚛 ' + r.n + ' NF(s) coletadas · ' + r.vol + ' vol. · ' + r.motorista + (r.placa ? ' · ' + r.placa : '') + ' · ' + r.hora, 'ok'); som('ok');
       await carregar(true);
     } catch (err) {
       if (err.semAcesso) return semAcesso(err.message);
