@@ -109,7 +109,10 @@
   .sp { border-left: 5px solid var(--av); }
   .sp.ok { border-left-color: var(--ok); } .sp.fora { border-left-color: #b0b8c1; opacity: .75; } .sp.canc { border-left-color: var(--er); }
   /* cartão compacto (27/11/2026): mais NFs na tela */
-  .card.sp { padding: 8px 10px; margin: 6px 0; }
+  .card.sp { padding: 7px 10px; margin: 6px 0; }
+  /* separação no computador: tela mais larga (27/11/2026) */
+  body.larga main { max-width: 980px; }
+  .sp-res { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 12.5px; color: #5b6470; margin-top: 6px; }
   .sp .topo { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; font-size: 13px; }
   .sp .topo b.nf { font-size: 15px; }
   .sp .topo .ped { margin-top: 0; }
@@ -118,11 +121,13 @@
   .sp .tr { margin: 4px 0 2px; padding: 4px 8px; border-radius: 6px; background: #eef3fb; font-size: 12.5px; line-height: 1.35; }
   .sp .tr.sem { background: #fff4d6; }
   .sp .tr b { font-size: 13px; }
-  .sp-it { display: flex; gap: 8px; align-items: center; width: 100%; text-align: left; border: 1px solid #e3e7ec; background: #fff; border-radius: 8px; padding: 5px 8px; margin: 4px 0; font-size: 13.5px; line-height: 1.3; color: var(--tx); }
-  .sp-it .cx { flex: none; width: 22px; height: 22px; border-radius: 5px; border: 2px solid #9aa3ad; display: grid; place-items: center; font-size: 14px; color: #fff; }
+  .sp-it { display: flex; gap: 8px; align-items: center; width: 100%; text-align: left; border: 1px solid #e3e7ec; background: #fff; border-radius: 7px; padding: 3px 8px; margin: 3px 0; min-height: 32px; font-size: 13.5px; line-height: 1.2; color: var(--tx); white-space: nowrap; }
+  .sp-it .d { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .sp-it .s { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; color: #6b7480; font-size: 11.5px; }
+  .sp-it .cx { flex: none; width: 20px; height: 20px; border-radius: 5px; border: 2px solid #9aa3ad; display: grid; place-items: center; font-size: 14px; color: #fff; }
   .sp-it.on { background: #eaf6ec; border-color: #bfe3c4; }
   .sp-it.on .cx { background: var(--ok); border-color: var(--ok); }
-  .sp-it .q { font-weight: 800; font-size: 15px; white-space: nowrap; }
+  .sp-it .q { font-weight: 800; font-size: 14px; white-space: nowrap; flex: none; min-width: 42px; }
   .sp-it small { display: block; color: #6b7480; font-size: 11.5px; margin-top: 1px; }
   .sp-it:disabled { color: var(--tx); }
   .sp .fim { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 5px; }
@@ -143,6 +148,8 @@
   .sp-cf input { width: 100%; }
   .sp-cf .l2 { grid-column: 1 / -1; }
   .sp-feitas { margin-top: 10px; font-size: 13.5px; }
+  .sp-div { display: flex; align-items: center; gap: 8px; margin: 14px 2px 4px; font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--az); }
+  .sp-div::after { content: ''; flex: 1; border-top: 1px solid #b9cdf3; }
   .sp-feitas li { padding: 6px 0; border-top: 1px solid #eef0f3; list-style: none; }
   .sp-feitas ul { padding: 0; margin: 0; }
   #spMsg { min-height: 0; }
@@ -235,10 +242,10 @@
         <div><span class="grande" id="spCont">0/0</span> <span class="muted">NFs separadas</span></div>
         <div class="chips" id="spFiltro"><button data-spf="pend">A separar</button><button data-spf="ok">Separadas</button><button data-spf="coleta">Coleta</button><button data-spf="todas">Todas</button></div>
       </div>
-      <div class="row fat"><button class="btn" id="spAdd" style="flex:1">Adicionar à separação</button><input type="file" id="spArq" multiple hidden></div>
-      <p class="muted fat" style="margin:2px 0 6px">XMLs do Bling (.xml ou .zip). Entram só aqui: não vão para a Expedição nem ficam esperando bipagem. O que você adiciona no lote da Expedição já aparece aqui.</p>
+      <div class="row fat" style="margin:6px 0 2px"><button class="btn" id="spAdd" style="flex:1">Adicionar à separação</button><button class="btn claro" id="spNovoDia">Novo dia</button><input type="file" id="spArq" multiple hidden></div>
+      <p class="muted fat" style="margin:0;font-size:12px">XMLs do Bling (.xml/.zip): entram só aqui, sem bipagem. O lote da Expedição também aparece aqui. Novo dia: tira da tela o que já foi coletado; o que está em aberto continua.</p>
       <div id="spTransp" class="muted"></div>
-      <p class="muted" style="margin:6px 0 0">Vendas por transportadora e de marketplace. Toque em cada produto quando separar. NF nova aparece sozinha quando o faturista adiciona (aqui ou no lote da Expedição).</p>
+      <p class="muted" style="margin:4px 0 0;font-size:12px">Toque em cada produto quando separar. NF nova aparece sozinha.</p>
     </div>
     <div id="spMsg" class="aviso"></div>
     <div id="spLista"></div>
@@ -597,6 +604,7 @@ function ir(t) {
   if (!S) return;
   if (t !== 'menu' && !podeTela(t)) return;
   TELA = t;
+  document.body.classList.toggle('larga', t === 'separacao');
   ['inicio', 'login', 'menu', 'expedicao', 'separacao', 'saida', 'inventario', 'entrada', 'devolucao', 'situacao', 'batismo'].forEach(x => $('t-' + x).classList.toggle('hidden', x !== t));
   $('leitura').classList.toggle('hidden', !['expedicao', 'saida', 'inventario', 'entrada', 'devolucao', 'situacao'].includes(t));
   $('hVoltar').classList.toggle('hidden', t === 'menu');
@@ -950,7 +958,7 @@ function spCard(e) {
     const on = !!e.seps[i], p = prog[it.s];
     const sub = [esc(it.s), on ? '✓ ' + esc(e.seps[i]) : '', p ? (p.feito >= p.qtd ? '✅ ' : '') + p.feito + '/' + fmtQ(p.qtd) + ' caixa(s) bipada(s) na expedição' : ''].filter(Boolean).join(' · ');
     return '<button type="button" class="sp-it' + (on ? ' on' : '') + '" data-spi="' + i + '"' + (trava ? ' disabled' : '') + '>' +
-      '<span class="cx">' + (on ? '✓' : '') + '</span><span><span class="q">' + fmtQ(it.q) + ' ' + esc((it.u || 'un').toLowerCase()) + '</span> ' + esc(it.d || it.s) + '<small>' + sub + '</small></span></button>';
+      '<span class="cx">' + (on ? '✓' : '') + '</span><span class="q">' + fmtQ(it.q) + ' ' + esc((it.u || 'un').toLowerCase()) + '</span><span class="d" title="' + esc(it.d || it.s) + '">' + esc(it.d || it.s) + '</span><span class="s">' + sub + '</span></button>';
   }).join('');
   // rodapé
   if (canc) h += '<div class="faixa" style="background:#fde4e4">NF cancelada: não separar, não expedir.</div>';
@@ -987,7 +995,8 @@ function sepRender() {
   const porT = {};
   conta.forEach(e => { const t = e.mkt ? '🏷 ' + (e.canal || 'Marketplace') : e.tg || e.transp || 'sem transportadora'; const x = porT[t] = porT[t] || { nf: 0, ok: 0, vol: 0 };
     x.nf++; if (spSep(e)) x.ok++; x.vol += spSep(e) ? e.volSep : (e.vol || 0); });
-  $('spTransp').innerHTML = Object.keys(porT).sort().map(t => (t === 'sem transportadora' ? '<b style="color:var(--er)">⚠ sem transportadora</b>: ' : t.indexOf('🏷') === 0 ? '<b>' + esc(t) + '</b>: ' : '🚚 <b>' + esc(t) + '</b>: ') + porT[t].ok + '/' + porT[t].nf + ' NF separada(s)' + (porT[t].vol ? ' · ' + porT[t].vol + ' vol.' : '')).join('<br>');
+  $('spTransp').className = 'sp-res';
+  $('spTransp').innerHTML = Object.keys(porT).sort().map(t => '<span>' + (t === 'sem transportadora' ? '<b style="color:var(--er)">⚠ sem transportadora</b> ' : t.indexOf('🏷') === 0 ? '<b>' + esc(t) + '</b> ' : '🚚 <b>' + esc(t) + '</b> ') + porT[t].ok + '/' + porT[t].nf + (porT[t].vol ? ' · ' + porT[t].vol + ' vol.' : '') + '</span>').join('');
   let h = '', cards = null;
   if (!S.sepAtivo) h = '<div class="aviso">A separação ainda não está instalada no servidor (arquivo Separacao.gs no projeto do Painel).</div>';
   else if (S.sepErro) h = '<div class="aviso">Erro ao ler a separação: ' + esc(S.sepErro) + '</div>';
@@ -1028,6 +1037,14 @@ function spPintar(lista) {
     const novo = t.firstElementChild; velho.replaceWith(novo); SP_HTML[x.ch] = x.html; restaurar(novo);
   });
 }
+// Novo dia da separação (faturista): o que já terminou sai da tela; a separar e separada esperando a coleta continuam
+$('spNovoDia').onclick = function () {
+  confirmar(this, 'Novo dia', async () => {
+    try { const r = await api('separacao', { op: 'novoDia' }); await carregar(true);
+      spAviso('Novo dia: ' + r.sai + ' NF(s) saíram da tela · continuam ' + r.pend + ' a separar e ' + r.sep + ' esperando a coleta', 'ok'); }
+    catch (e) { if (e.semAcesso) return semAcesso(e.message); spAviso('Não foi possível: ' + e.message, 'er'); }
+  });
+};
 // "Adicionar à separação" (faturista): XMLs (.xml ou .zip) → só a separação (op "lote" do Separacao.gs)
 $('spAdd').onclick = () => { preLib('JSZip'); $('spArq').click(); };
 $('spArq').onchange = async function () {
@@ -1122,8 +1139,11 @@ function spColeta(lista) {
       h += '<div class="sp-feitas"><span class="muted">Coletadas</span><ul>' + Object.keys(por).sort().map(k => { const x = por[k], e = x[0];
         return '<li>🚛 <b>' + esc(e.col) + '</b> · ' + esc(e.mot) + (e.placa ? ' · ' + esc(e.placa) : '') + '<br><span class="muted">NF ' + x.map(y => esc(y.nf)).join(', ') + ' · ' + x.reduce((a, y) => a + y.volSep, 0) + ' vol.</span></li>'; }).join('') + '</ul></div>';
     }
-    return { ch: 'g:' + g, html: h + '</div>' };
-  });
+    return { ch: 'g:' + g, html: h + '</div>', fim: !prontas.length };
+  }).reduce((out, c) => {   // linha que separa as transportadoras já coletadas (nada em aberto) das que ainda vão sair
+    if (c.fim && !out.some(x => x.ch === 'div:col')) out.push({ ch: 'div:col', html: '<div class="sp-div" data-ch="div:col">Já coletadas</div>' });
+    out.push(c); return out;
+  }, []);
 }
 function spColetar(b, gch) {
   const g = gch.slice(2), f = SP_FORM[gch] || {};
