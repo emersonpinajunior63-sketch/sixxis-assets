@@ -215,8 +215,10 @@
         <div><span class="grande" id="spCont">0/0</span> <span class="muted">NFs separadas</span></div>
         <div class="chips" id="spFiltro"><button data-spf="pend">A separar</button><button data-spf="ok">Separadas</button><button data-spf="todas">Todas</button></div>
       </div>
+      <div class="row fat"><button class="btn" id="spAdd" style="flex:1">Adicionar à separação</button><input type="file" id="spArq" multiple hidden></div>
+      <p class="muted fat" style="margin:2px 0 6px">XMLs do Bling (.xml ou .zip). Entram só aqui: não vão para a Expedição nem ficam esperando bipagem.</p>
       <div id="spTransp" class="muted"></div>
-      <p class="muted" style="margin:6px 0 0">Vendas sem etiqueta de marketplace (venda direta, B2B). Toque em cada produto quando separar. NF nova aparece sozinha quando o faturista adiciona o lote (XML).</p>
+      <p class="muted" style="margin:6px 0 0">Vendas sem etiqueta de marketplace (venda direta, B2B). Toque em cada produto quando separar. NF nova aparece sozinha quando o faturista adiciona.</p>
     </div>
     <div id="spMsg" class="aviso"></div>
     <div id="spLista"></div>
@@ -865,10 +867,10 @@ $('rArq').onchange = async function () {
 // (Separacao.gs) guarda na aba SERIAL_SEPARACAO a transportadora, o frete, os volumes, o peso e os itens com descrição.
 // Quem separa toca em cada produto e, no fim, informa os volumes e conclui. Precisa de internet (não usa a fila das
 // bipagens): cada toque já aparece marcado e vai para a planilha em ordem; se a planilha recusar, a tela se corrige.
-const SP_ST = { PEND: 'PENDENTE', OK: 'SEPARADA', FORA: 'FORA DA LISTA' };
+const SP_ST = { PEND: 'PENDENTE', OK: 'SEPARADA', FORA: 'FORA DA LISTA', CANC: 'CANCELADA' };
 let SP_FILTRO = ls.get('ldr_spf', 'pend'), SP_ADIADO = false;
 const SP_PEND = {}, SP_Q = {}, SP_VOL = {};   // por NF: mudanças locais ainda não confirmadas · fila de envio · volumes digitados
-const spCanc = e => { const n = S.rom.nfs[e.chave]; return !!(n && n.canc); };
+const spCanc = e => { const n = S.rom.nfs[e.chave]; return e.sit === SP_ST.CANC || !!(n && n.canc); };
 const spConta = e => !spCanc(e) && e.sit !== SP_ST.FORA;   // entra nos totais
 function spAviso(t, tipo) {
   const m = $('spMsg'); m.textContent = t || ''; m.style.background = tipo === 'er' ? '#fde4e4' : tipo === 'ok' ? '#e3f3e5' : '';
@@ -971,8 +973,8 @@ function sepRender() {
     const peso = e => spCanc(e) ? 3 : e.sit === SP_ST.FORA ? 2 : e.sit === SP_ST.OK ? 1 : 0;
     vis.sort((a, b) => peso(a) - peso(b) || (a.transp || '~').localeCompare(b.transp || '~') || (Number(a.nf) || 0) - (Number(b.nf) || 0));
     if (vis.length) cards = vis.map(e => ({ ch: e.chave, html: spCard(e) }));
-    else if (!todas.length) h = '<div class="card"><p class="muted" style="margin:0">Nenhuma venda por transportadora no romaneio aberto. Elas entram quando o faturista adiciona o lote (XML).' +
-      (faturista() ? ' NF que já estava no romaneio antes desta versão: adicione o XML dela de novo (o leitor diz "já estava", mas ela entra na separação).' : '') + '</p></div>';
+    else if (!todas.length) h = '<div class="card"><p class="muted" style="margin:0">Nenhuma venda para separar. ' +
+      (faturista() ? 'Toque em “Adicionar à separação” e escolha os XMLs das notas (venda direta / transportadora).' : 'Aguarde o faturista adicionar as notas.') + '</p></div>';
     else h = '<div class="card"><p style="margin:0">' + (SP_FILTRO === 'pend' ? '✅ Nada a separar agora.' : 'Nenhuma NF separada ainda.') + '</p></div>';
   }
   spPintar(cards || [{ ch: '', html: h }]);
@@ -998,6 +1000,31 @@ function spPintar(lista) {
     const novo = t.firstElementChild; velho.replaceWith(novo); SP_HTML[x.ch] = x.html; restaurar(novo);
   });
 }
+// "Adicionar à separação" (faturista): XMLs (.xml ou .zip) → só a separação (op "lote" do Separacao.gs)
+$('spAdd').onclick = () => { preLib('JSZip'); $('spArq').click(); };
+$('spArq').onchange = async function () {
+  const files = Array.from(this.files || []); this.value = ''; if (!files.length) return;
+  spAviso('Lendo os arquivos…');
+  try {
+    const a = await arquivos(files), nfs = [], canc = [];
+    let ign = 0;
+    a.xmls.forEach(t => { const x = lerXml(t); if (x.tipo === 'nfe') nfs.push(x.nf); else if (x.tipo === 'cancelamento') canc.push(x.chave); else ign++; });
+    if (!nfs.length && !canc.length) { spAviso('Nenhuma NF-e de saída autorizada nos arquivos' + (a.pdfs.length ? ' (PDF não serve aqui: use os XMLs)' : '') + '.', 'er'); som('er'); return; }
+    spAviso('Enviando ' + nfs.length + ' NF(s)…');
+    const r = await api('separacao', { op: 'lote', nfs: nfs, canc: canc });
+    await carregar(true);
+    const fal = [r.semTransp.length ? 'sem transportadora: NF ' + r.semTransp.join(', ') : '', r.semVol.length ? 'volumes zerados: NF ' + r.semVol.join(', ') : '',
+                 r.semFrete.length ? 'frete zerado: NF ' + r.semFrete.join(', ') : ''].filter(Boolean);
+    const txt = [r.add + ' NF(s) na separação', r.dup ? r.dup + ' já estavam' : '', r.fora ? r.fora + ' de marketplace (ficam fora)' : '',
+                 r.canc ? r.canc + ' cancelada(s)' : '', ign ? ign + ' XML(s) ignorado(s)' : ''].filter(Boolean).join(' · ');
+    if (fal.length) { spAviso('⚠ ' + fal.join(' · ') + ' — ' + txt, 'er'); som('er'); }
+    else { spAviso(txt, r.add || r.canc ? 'ok' : ''); som(r.add || r.canc ? 'ok' : 'av'); }
+    SP_FILTRO = 'pend'; ls.set('ldr_spf', SP_FILTRO); sepRender();
+  } catch (e) {
+    if (e.semAcesso) return semAcesso(e.message);
+    spAviso('Não consegui adicionar: ' + e.message, 'er'); som('er');
+  }
+};
 document.querySelectorAll('[data-spf]').forEach(b => b.onclick = () => { SP_FILTRO = b.dataset.spf; ls.set('ldr_spf', SP_FILTRO); sepRender(true); });
 $('spLista').addEventListener('focusout', () => setTimeout(() => { if (SP_ADIADO) sepRender(true); }, 0));
 $('spLista').addEventListener('input', e => { const c = e.target.closest('[data-ch]'); if (e.target.dataset.spvol && c) SP_VOL[c.dataset.ch] = e.target.value; });
