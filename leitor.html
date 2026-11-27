@@ -216,9 +216,9 @@
         <div class="chips" id="spFiltro"><button data-spf="pend">A separar</button><button data-spf="ok">Separadas</button><button data-spf="todas">Todas</button></div>
       </div>
       <div class="row fat"><button class="btn" id="spAdd" style="flex:1">Adicionar à separação</button><input type="file" id="spArq" multiple hidden></div>
-      <p class="muted fat" style="margin:2px 0 6px">XMLs do Bling (.xml ou .zip). Entram só aqui: não vão para a Expedição nem ficam esperando bipagem.</p>
+      <p class="muted fat" style="margin:2px 0 6px">XMLs do Bling (.xml ou .zip). Entram só aqui: não vão para a Expedição nem ficam esperando bipagem. O que você adiciona no lote da Expedição já aparece aqui.</p>
       <div id="spTransp" class="muted"></div>
-      <p class="muted" style="margin:6px 0 0">Vendas sem etiqueta de marketplace (venda direta, B2B). Toque em cada produto quando separar. NF nova aparece sozinha quando o faturista adiciona.</p>
+      <p class="muted" style="margin:6px 0 0">Vendas por transportadora e de marketplace. Toque em cada produto quando separar. NF nova aparece sozinha quando o faturista adiciona (aqui ou no lote da Expedição).</p>
     </div>
     <div id="spMsg" class="aviso"></div>
     <div id="spLista"></div>
@@ -915,9 +915,11 @@ function spCard(e) {
   const brl = v => 'R$ ' + Number(v).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   const info = [e.frete ? esc(e.frete) : '', e.vFrete > 0 ? 'frete ' + brl(e.vFrete) : '', e.vol ? e.vol + ' vol. na NF' : '', e.peso ? fmtQ(e.peso) + ' kg' : ''].filter(Boolean).join(' · ');
   // transportadora, volumes e valor do frete vêm só do XML: faltando, é aviso (a nota precisa sair com eles)
-  const semT = !e.transp, semV = !(e.vol > 0), semF = !(e.vFrete > 0);
+  // marketplace (ML, Shopee…): sai pela etiqueta casada, sem os avisos de transportadora/volumes/frete
+  const semT = !e.mkt && !e.transp, semV = !e.mkt && !(e.vol > 0), semF = !e.mkt && !(e.vFrete > 0);
   const falt = [semT ? 'a transportadora' : '', semV ? 'os volumes' : '', semF ? 'o valor do frete' : ''].filter(Boolean);
-  h += '<div class="tr' + (falt.length ? ' sem' : '') + '">🚚 ' + (semT ? '<b style="color:var(--er)">⚠ NF sem transportadora</b>' : '<b>' + esc(e.transp) + '</b>') +
+  if (e.mkt) h += '<div class="tr">🏷 <b>' + esc(e.canal || 'Marketplace') + '</b> · etiqueta casada' + (n && n.envio ? ' · envio ' + esc(n.envio) : '') + '</div>';
+  else h += '<div class="tr' + (falt.length ? ' sem' : '') + '">🚚 ' + (semT ? '<b style="color:var(--er)">⚠ NF sem transportadora</b>' : '<b>' + esc(e.transp) + '</b>') +
     (info ? '<br><span class="muted">' + info + '</span>' : '') +
     (semV ? '<br><b style="color:var(--er)">⚠ NF sem quantidade de volumes</b>' : '') +
     (semF ? '<br><b style="color:var(--er)">⚠ NF com frete zerado</b>' : '') +
@@ -961,9 +963,9 @@ function sepRender() {
   document.querySelectorAll('[data-spf]').forEach(b => b.classList.toggle('on', b.dataset.spf === SP_FILTRO));
   // resumo por transportadora (para a coleta): NFs e volumes (separados, ou os da NF enquanto não separou)
   const porT = {};
-  conta.forEach(e => { const t = e.transp || 'sem transportadora'; const x = porT[t] = porT[t] || { nf: 0, ok: 0, vol: 0 };
+  conta.forEach(e => { const t = e.mkt ? '🏷 ' + (e.canal || 'Marketplace') : e.transp || 'sem transportadora'; const x = porT[t] = porT[t] || { nf: 0, ok: 0, vol: 0 };
     x.nf++; if (e.sit === SP_ST.OK) x.ok++; x.vol += e.sit === SP_ST.OK ? e.volSep : (e.vol || 0); });
-  $('spTransp').innerHTML = Object.keys(porT).sort().map(t => (t === 'sem transportadora' ? '<b style="color:var(--er)">⚠ sem transportadora</b>: ' : '🚚 <b>' + esc(t) + '</b>: ') + porT[t].ok + '/' + porT[t].nf + ' NF separada(s)' + (porT[t].vol ? ' · ' + porT[t].vol + ' vol.' : '')).join('<br>');
+  $('spTransp').innerHTML = Object.keys(porT).sort().map(t => (t === 'sem transportadora' ? '<b style="color:var(--er)">⚠ sem transportadora</b>: ' : t.indexOf('🏷') === 0 ? '<b>' + esc(t) + '</b>: ' : '🚚 <b>' + esc(t) + '</b>: ') + porT[t].ok + '/' + porT[t].nf + ' NF separada(s)' + (porT[t].vol ? ' · ' + porT[t].vol + ' vol.' : '')).join('<br>');
   let h = '', cards = null;
   if (!S.sepAtivo) h = '<div class="aviso">A separação ainda não está instalada no servidor (arquivo Separacao.gs no projeto do Painel).</div>';
   else if (S.sepErro) h = '<div class="aviso">Erro ao ler a separação: ' + esc(S.sepErro) + '</div>';
@@ -1015,7 +1017,7 @@ $('spArq').onchange = async function () {
     await carregar(true);
     const fal = [r.semTransp.length ? 'sem transportadora: NF ' + r.semTransp.join(', ') : '', r.semVol.length ? 'volumes zerados: NF ' + r.semVol.join(', ') : '',
                  r.semFrete.length ? 'frete zerado: NF ' + r.semFrete.join(', ') : ''].filter(Boolean);
-    const txt = [r.add + ' NF(s) na separação', r.dup ? r.dup + ' já estavam' : '', r.fora ? r.fora + ' de marketplace (ficam fora)' : '',
+    const txt = [r.add + ' NF(s) na separação', r.dup ? r.dup + ' já estavam' : '', r.mkt ? r.mkt + ' de marketplace' : '',
                  r.canc ? r.canc + ' cancelada(s)' : '', ign ? ign + ' XML(s) ignorado(s)' : ''].filter(Boolean).join(' · ');
     if (fal.length) { spAviso('⚠ ' + fal.join(' · ') + ' — ' + txt, 'er'); som('er'); }
     else { spAviso(txt, r.add || r.canc ? 'ok' : ''); som(r.add || r.canc ? 'ok' : 'av'); }
